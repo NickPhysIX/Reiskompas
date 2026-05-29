@@ -1,8 +1,9 @@
-# QA-check v2.0-beta.1
+# QA-check v2.0-beta.2
 
-- version_beta_1: True
-- sw_cache_beta_1: True
-- footer_creator: True
-- about_modal: True
-- modal_close_escape: True
+- version_beta_2: True
+- sw_cache_beta_2: True
+- custom_area_local_areaSel: True
+- meta_description_updated: True
+- esc_quotes: True
+- console_warns: True
 - app_js_syntax_ok: True

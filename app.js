@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.1';
+const APP_VERSION = '2.0-beta.2';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -33,7 +33,7 @@ function cacheGet(type, parts, ttl){
     const item = JSON.parse(raw);
     if(!item || Date.now() - item.t > ttl) return null;
     return item.v;
-  }catch(e){ return null; }
+  }catch(e){ console.warn('cacheGet failed', e); return null; }
 }
 function cacheSet(type, parts, val){
   try{ localStorage.setItem(cacheKey(type, parts), JSON.stringify({t:Date.now(), v:val})); }catch(e){}
@@ -278,7 +278,8 @@ function setupAutocomplete(inputId,listId,key){
     if(area){
       state.area=area;
       inp.value=area.name;
-      if(sel) sel.value='';
+      const areaSel=$('area');
+      if(areaSel) areaSel.value='';
       setFieldHint('area-hint',`Focus op ${area.name}.`);
     }else{
       setFieldHint('area-hint','Gebied niet herkend; probeer bijvoorbeeld Centrum, Binnenstad of een wijknaam.');
@@ -323,7 +324,7 @@ async function resolveCity(q){
     return {lat:+best.lat,lon:+best.lon,name,
       country:normalizeCountry(a.country,a.country_code,+best.lat,+best.lon),
       cc:(a.country_code||'').toLowerCase()};
-  }catch(e){ return null; }
+  }catch(e){ console.warn('resolveCity failed', e); return null; }
 }
 
 /* ---------- buurten / gebied + afstand ---------- */
@@ -444,7 +445,7 @@ async function resolveAreaText(q, city){
     const p=f.properties||{};
     const name=p.name||p.city||q;
     return {name, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], dist:haversine(city,{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}), custom:true};
-  }catch(e){ return null; }
+  }catch(e){ console.warn('resolveAreaText failed', e); return null; }
 }
 
 function setupAreaCustom(){
@@ -478,7 +479,7 @@ function setupAreaCustom(){
           list.appendChild(it);
         });
         list.classList.toggle('open',(d.features||[]).length>0);
-      }catch(e){ list.classList.remove('open'); }
+      }catch(e){ console.warn('autocomplete failed', e); list.classList.remove('open'); }
     },260);
   });
   async function resolveCustomArea(){
@@ -488,7 +489,8 @@ function setupAreaCustom(){
     if(area){
       state.area=area;
       inp.value=area.name;
-      if(sel) sel.value='';
+      const areaSel=$('area');
+      if(areaSel) areaSel.value='';
       setFieldHint('area-hint',`Focus op ${area.name}.`);
     }else{
       setFieldHint('area-hint','Gebied niet herkend; probeer bijvoorbeeld Centrum, Binnenstad of een wijknaam.');
@@ -650,7 +652,7 @@ function poiCard(e,tag,extra=''){
     <a class="lk" href="${gmaps(e.lat,e.lon)}" target="_blank" rel="noopener">Open in kaart →</a>
   </div>`;
 }
-function esc(s){return (s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function escAttr(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /* ---------- routing (OSRM, auto) ---------- */

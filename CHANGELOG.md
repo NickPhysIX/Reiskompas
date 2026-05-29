@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0-beta.2
+
+Kleine QA/QC-fixrelease.
+
+- Handmatige focusgebied-invoer explicieter gemaakt: het `area`-select-element wordt nu lokaal opgehaald in de custom-area resolver.
+- Meta-description in `index.html` bijgewerkt naar de nieuwe stadsverkenner/dossier-scope.
+- `esc()` aangescherpt: naast `<`, `>` en `&` worden nu ook quotes escaped.
+- Enkele belangrijke stille foutafhandelingen geven nu `console.warn()` voor makkelijker live-debuggen.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.2.
+
 ## v2.0-beta.1
 
 - Subtiele footer toegevoegd met `door Niels Braakman`.
