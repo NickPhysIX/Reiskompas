@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v1.9.10 — klaar voor je citytrip</title>
-<meta name="description" content="Reiskompas v1.9.10: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
+<title>Reiskompas v2.0-beta.1 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v2.0-beta.1: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -274,6 +274,37 @@ input[type=time]::-webkit-calendar-picker-indicator{
 .colophon b{color:var(--ink-soft);}
 .regen{margin-top:10px;}
 
+.creator-footer{
+  text-align:center;margin:26px auto 8px;color:var(--ink-soft);font-size:13px;
+}
+.creator-footer button{
+  border:0;background:transparent;color:var(--rust);font:inherit;font-weight:700;cursor:pointer;text-decoration:underline;
+}
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(36,29,22,.42);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px;
+}
+.modal-card{
+  width:min(720px,96vw);max-height:82vh;overflow:auto;background:var(--paper);border:2px solid var(--line-strong);
+  border-radius:16px;box-shadow:0 20px 70px rgba(0,0,0,.28);padding:22px;
+}
+.modal-card h2{margin:0 0 8px;font-family:Fraunces,serif;}
+.modal-card h3{margin:18px 0 6px;font-size:15px;}
+.modal-card p,.modal-card li{color:var(--ink-soft);line-height:1.5;font-size:14px;}
+.modal-card ul{padding-left:20px;}
+.modal-actions{display:flex;justify-content:flex-end;margin-top:16px;}
+
+
+.dossier-panel{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:15px 16px;}
+.dossier-panel textarea,.dossier-panel input{
+  width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:1.5px solid var(--line-strong);
+  border-radius:10px;background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;
+}
+.saved-list{display:grid;gap:8px;margin-top:12px;}
+.saved-item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:rgba(255,255,255,.28);}
+.saved-item b{display:block;}
+.saved-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+
+
 .mode-hint{font-size:12px;color:var(--ink-soft);line-height:1.45;margin-top:7px;}
 .field.disabled{opacity:.55;}
 .field.disabled input,.field.disabled select{pointer-events:none;}
@@ -374,7 +405,7 @@ details.plan-details .actions{padding:0 16px 14px;}
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.9.10</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v2.0-beta.1</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -387,6 +418,15 @@ details.plan-details .actions{padding:0 16px 14px;}
   <section class="panel form-panel">
     <div class="panel-head"><h2>Vertel over je trip</h2><span class="step">Plan</span></div>
     <div class="form-body">
+
+      <div class="field">
+        <button class="btn" type="button" onclick="toggleLibrary()">📚 Mijn dossiers</button>
+        <div id="library-drawer" class="dossier-panel hidden" style="margin-top:10px">
+          <div class="note">Eerder opgeslagen stadsdossiers op dit apparaat.</div>
+          <div id="library-list" class="saved-list"></div>
+        </div>
+      </div>
+
 
       <div class="field">
         <label class="lbl" for="dest">Waar ga je heen?</label>
@@ -405,6 +445,19 @@ details.plan-details .actions{padding:0 16px 14px;}
         </div>
         <div class="hint" id="area-hint">Vult zich nadat je een bestemming kiest — handig in grote steden.</div>
       </div>
+
+        <div class="field">
+          <label class="lbl" for="radius">Zoekbereik rondom focusgebied</label>
+          <select id="radius">
+            <option value="0.5">500 meter</option>
+            <option value="1">1 km</option>
+            <option value="2" selected>2 km</option>
+            <option value="3">3 km</option>
+            <option value="5">5 km</option>
+            <option value="10">10 km</option>
+          </select>
+          <div class="hint">Dit is de straal rondom je gekozen stad, buurt, wijk of POI.</div>
+        </div>
 
       <div class="field">
         <label class="lbl">Startmodus</label>
@@ -487,7 +540,7 @@ details.plan-details .actions{padding:0 16px 14px;}
         </div>
       </div>
 
-      <button class="cta" id="go">Genereer mijn reisplan <span class="arr">→</span></button>
+      <button class="cta" id="go">Genereer mijn stadsdossier <span class="arr">→</span></button>
     </div>
   </section>
 
@@ -496,8 +549,8 @@ details.plan-details .actions{padding:0 16px 14px;}
 
     <div class="empty" id="empty">
       <div class="big">🧭</div>
-      <h3>Je reisdossier verschijnt hier</h3>
-      <p>Vul het formulier in en klik op <em>genereer mijn reisplan</em>. Alles wordt live opgehaald uit gratis openbare bronnen — geen account, geen keys.</p>
+      <h3>Je stadsdossier verschijnt hier</h3>
+      <p>Vul het formulier in en klik op <em>genereer mijn stadsdossier</em>. Alles wordt live opgehaald uit gratis openbare bronnen — geen account, geen keys.</p>
     </div>
 
     <div class="loading" id="loading">
@@ -513,13 +566,49 @@ details.plan-details .actions{padding:0 16px 14px;}
       <div class="sec" id="sec-drink"></div>
       <div class="sec" id="sec-travel"></div>
       <div class="sec" id="sec-disruptions"></div>
-      <div class="sec" id="sec-plan"></div>
+      <div class="sec" id="sec-dossier"></div>
       <div class="sec" id="sec-ai"></div>
       <div class="colophon" id="colophon"></div>
     </div>
 
   </section>
 </main>
+
+
+<footer class="creator-footer">
+  Reiskompas v2.0-beta.1 · door <b>Niels Braakman</b> ·
+  <button type="button" onclick="openAboutModal()">Over deze app</button>
+</footer>
+
+<div class="modal-backdrop hidden" id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+  <div class="modal-card">
+    <h2 id="aboutTitle">Over Reiskompas</h2>
+    <p><b>Reiskompas</b> is een kleine, privacyvriendelijke stadsverkenner voor één dag of één bezoekmoment.</p>
+    <p>De app helpt je snel ontdekken wat er interessant is rond een stad, buurt, wijk of focuspunt — zonder accounts, backend of tracking.</p>
+
+    <h3>Wat Reiskompas doet</h3>
+    <ul>
+      <li>Toont weer, bereikbaarheid, parkeer-/OV-informatie en aandachtspunten.</li>
+      <li>Zoekt bezienswaardigheden, eten, drinken en verborgen parels via openbare bronnen.</li>
+      <li>Laat je plekken kiezen die interessant zijn voor deze trip.</li>
+      <li>Bewaart lokale dossiers met gekozen plekken en notities op je eigen apparaat.</li>
+    </ul>
+
+    <h3>Wat Reiskompas bewust niet doet</h3>
+    <ul>
+      <li>Geen uurplanning of dag-itinerary.</li>
+      <li>Geen meerdaagse reisplanner.</li>
+      <li>Geen account, cloudopslag of commerciële tracking.</li>
+    </ul>
+
+    <h3>Bronnen</h3>
+    <p>Reiskompas gebruikt onder andere OpenStreetMap/Overpass, Open-Meteo, OSRM, Photon/Nominatim en Leaflet. Gegevens kunnen onvolledig of verouderd zijn; controleer belangrijke details zoals openingstijden, tarieven en verstoringen altijd bij officiële bronnen.</p>
+
+    <div class="modal-actions">
+      <button class="btn solid" type="button" onclick="closeAboutModal()">Sluiten</button>
+    </div>
+  </div>
+</div>
 
 <div class="install-prompt hidden" id="installPrompt">
   <div><b>📱 Installeer Reiskompas</b><br><span>Op iPhone/iPad: deelknop → zet op beginscherm.</span></div>

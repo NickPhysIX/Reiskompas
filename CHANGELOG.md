@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.0-beta.1
+
+- Subtiele footer toegevoegd met `door Niels Braakman`.
+- **Over deze app**-modal toegevoegd.
+- Modal bevat korte uitleg over doel, bronnen, privacyvriendelijke werking en beperkingen.
+- Escape/click-buiten sluit de modal.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.1.
+
+## v2.0-beta
+
+Beta-release op basis van v2.0-alpha.
+
+- Bibliotheekknop toegevoegd bovenaan het startformulier.
+- Opgeslagen dossiers kunnen nu worden bekeken zonder eerst een nieuwe zoekopdracht te genereren.
+- `window.__dossier` wordt gezet vóór de dossiersectie wordt gerenderd.
+- Reset selectie-knop toegevoegd aan het dossierpaneel.
+- Dossierbibliotheek toont geselecteerde plekken als chips.
+- Manifest opnieuw netjes gegenereerd.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.
+
+## v2.0-alpha
+
+Grote scopewijziging: Reiskompas is nu een persoonlijke stadsverkenner, geen itinerary-planner.
+
+- Dag-itinerary/routeplanning uit de hoofdflow gehaald.
+- Sectie **Logische route** vervangen door **Mijn dossier**.
+- Zoekradius toegevoegd rond gekozen focusgebied: 500 m, 1 km, 2 km, 3 km, 5 km, 10 km.
+- Gebiedskeuze verduidelijkt: gebied = focuspunt, radius = zoekbereik.
+- Dossiers lokaal opslaan met geselecteerde POI’s en notities.
+- AI-prompt herschreven naar stadsadvies zonder uurplanning of route-itinerary.
+- Startmodus **Ik reis erheen / Ik ben al in de buurt** behouden.
+- Meerdaagse reizen expliciet buiten scope.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-alpha.
+
+## v1.9.11
+
+Bugfix-release voor te agressieve bestemmingsherkenning.
+
+- Auto-resolve tijdens typen uitgeschakeld.
+- Bestemming wordt nu pas vastgezet via suggestie, Enter, blur of Genereer.
+- Voorkomt dat korte tussenstanden zoals `de` naar Duitsland-achtige resultaten springen.
+- `resolveCity()` vraagt meerdere resultaten op en scoort deze op exacte plaatsnaam, plaats-type en landcode.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.11.
+
 ## v1.9.10
 
 Hotfix op v1.9.9.

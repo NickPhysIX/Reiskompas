@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '1.9.10';
+const APP_VERSION = '2.0-beta.1';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -23,6 +23,7 @@ let routeFavoriteWarning = null;
 let displayCounts = { attractions: 9, eats: 9, drinks: 9 };
 let routeUseSuggestions = false;
 let favorites = []; // trip-specifieke selectie; niet persistent
+const DOSSIER_KEY = 'reiskompas-dossiers-v2-alpha';
 
 function cacheKey(type, parts){ return CACHE_PREFIX + type + ':' + parts.map(p=>String(p ?? '').toLowerCase()).join('|'); }
 function cacheGet(type, parts, ttl){
@@ -210,7 +211,7 @@ async function resolveTypedInput(key, opts={}){
   const inp=$(inputId);
   if(!inp) return null;
   const txt=inp.value.trim();
-  if(txt.length<2) return null;
+  if(txt.length<3) return null;
   if(state[key]) return state[key];
 
   const place = await resolveCity(txt);
@@ -243,7 +244,7 @@ function setupAutocomplete(inputId,listId,key){
     const q=inp.value.trim();
     clearTimeout(timer);
     if(q.length<2){ list.classList.remove('open'); return; }
-    if(key==='dest' || key==='dep') scheduleTypedResolve(key);
+    /* v1.9.11: niet automatisch resolven tijdens typen; dat koos te vroeg verkeerde landen. */
     timer=setTimeout(async()=>{
       try{
         const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lang=en`);
@@ -295,15 +296,33 @@ function setupAutocomplete(inputId,listId,key){
   document.addEventListener('click',e=>{ if(!inp.contains(e.target)&&!list.contains(e.target)) list.classList.remove('open'); });
 }
 // fallback resolve via Nominatim if user typed but didn't pick
-async function resolveCity(text){
+async function resolveCity(q){
   try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(text)}&limit=1&addressdetails=1`,
-      {headers:{'Accept-Language':'nl'}});
-    const d=await r.json();
-    if(!d.length) return null;
-    const p=d[0];
-    return {lat:+p.lat,lon:+p.lon,name:(p.display_name||text).split(',')[0],
-            country:normalizeCountry(p.address?.country,p.address?.country_code,+p.lat,+p.lon),cc:(p.address?.country_code||'').toLowerCase()};
+    const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&accept-language=nl,en&q=${encodeURIComponent(q)}`;
+    const r=await fetch(url);
+    const arr=await r.json();
+    if(!Array.isArray(arr) || !arr.length) return null;
+
+    const raw=String(q||'').split(',')[0].trim().toLowerCase();
+    const scored=arr.map(p=>{
+      const a=p.address||{};
+      const nm=(a.city||a.town||a.village||a.municipality||a.hamlet||p.name||(p.display_name||q).split(',')[0]||'').trim();
+      const cls=`${p.class||''}/${p.type||''}`;
+      let score=0;
+      if(nm.toLowerCase()===raw) score+=50;
+      if(['city','town','village','municipality'].some(k=>a[k])) score+=20;
+      if((a.country_code||'').toLowerCase()==='nl') score+=8;
+      if((a.country_code||'').toLowerCase()==='cw') score+=10;
+      if(/administrative|place/i.test(cls)) score+=5;
+      return {p,nm,score};
+    }).sort((a,b)=>b.score-a.score);
+
+    const best=scored[0].p;
+    const a=best.address||{};
+    const name=scored[0].nm || String(q||'');
+    return {lat:+best.lat,lon:+best.lon,name,
+      country:normalizeCountry(a.country,a.country_code,+best.lat,+best.lon),
+      cc:(a.country_code||'').toLowerCase()};
   }catch(e){ return null; }
 }
 
@@ -405,13 +424,13 @@ async function loadAreasFor(city){
     sel.innerHTML='<option value="">Hele stad / automatisch centrum</option>';
     areas.forEach((a,i)=>{
       const o=document.createElement('option');
-      o.value=i; o.textContent=`${a.name} · ${distLabel(a.dist)}`;
+      o.value=i; o.textContent=`${a.name}`;
       sel.appendChild(o);
     });
     sel.onchange=()=>{ const v=sel.value; state.area = v===''?null:(state._areas[+v]||null); if($('area-custom')) $('area-custom').value=''; };
   }
   if(h) h.textContent = areas.length
-    ? `${areas.length} buurten/gebieden gevonden — of typ zelf, bijv. Centrum, Punda of Binnenstad.`
+    ? `${areas.length} focusgebieden gevonden — kies er één, of typ zelf bijv. Centrum, Punda, TU Delft.`
     : 'Geen aparte buurten gevonden; typ eventueel zelf een focusgebied.';
 }
 
@@ -747,6 +766,7 @@ async function generate(){
   const time=$('time').value||'10:00';
   const mode=$('mode').value;
   const kids=$('kids').value;
+  const radiusKm = Math.max(0.5, Number($('radius')?.value || 2));
 
   if(!destText||!date){ alert('Vul minstens een bestemming en datum in.'); return; }
 
@@ -768,9 +788,8 @@ async function generate(){
   const city = dest;                                 // stadcentrum (weer + route-doel als geen buurt)
   const anchor = state.area ? state.area : city;     // waar we omheen zoeken
   const tight = !!state.area;                        // buurt gekozen → kleinere straal
-  const R = tight
-    ? { poi:2000, food:1800, park:1200, charge:2500, transit:1300 }
-    : { poi:4500, food:3500, park:2500, charge:4000, transit:2000 };
+  const radiusM = Math.round(radiusKm * 1000);
+  const R = { poi:radiusM, food:radiusM, park:Math.min(radiusM,3000), charge:Math.min(Math.max(radiusM,1500),5000), transit:Math.min(radiusM,3000) };
   const anchorName = state.area ? state.area.name : destText;
 
   // weer (altijd op stadsniveau)
@@ -830,7 +849,7 @@ async function generate(){
 
   routeUseSuggestions=false;
   resetDisplayCounts();
-  renderAll({dest:city,anchor,anchorName,tight,dep,destText:cleanDestText,depText:cleanDepText,date,time,mode,startMode:state.startMode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
+  renderAll({dest:city,anchor,anchorName,tight,radiusKm,dep,destText:cleanDestText,depText:cleanDepText,date,time,mode,startMode:state.startMode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
 
   $('loading').classList.remove('on');
   $('content').classList.add('on');
@@ -923,7 +942,7 @@ function renderAll(d){
       areaSuggest = `<div class="na" style="margin:2px 0 6px">Buurten in de resultaten — klik om hierop te focussen: </div><div class="chips" style="margin-bottom:10px">${chips}</div>`;
     }
   }
-  const areaCaption = `<div class="na" style="margin-bottom:8px">Zoekgebied: <b>${esc(d.anchorName)}</b>${d.tight?' · gekozen buurt, kleinere straal':''}</div>`;
+  const areaCaption = `<div class="na" style="margin-bottom:8px">Focus: <b>${esc(d.anchorName)}</b> · zoekstraal <b>${d.radiusKm} km</b></div>`;
   const doHTML = areaCaption + areaSuggest + (d.attractions.length
     ? sourceBadges()+`<div class="grid">${visibleItems(d.attractions,'attractions').map(e=>poiCard(e,catLabel(e))).join('')}</div>${moreButton('attractions',d.attractions.length)}`
     : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad, een andere buurt of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`);
@@ -962,12 +981,10 @@ function renderAll(d){
     sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
   }
 
-  // route
-  const routePlan=buildRoutePlan(d);
-  sec('sec-plan','Logische route','⑥', routeHTML(routePlan,d), routePlan.points.length?`${routePlan.points.length} stops`:'optioneel');
-  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d,routePlan), 'optioneel');
-  window.__routePlan={routePlan,date:d.date,dest:d.destText};
-  window.__dossier={...d, routePlan};
+  // dossier
+  window.__dossier={...d};
+  sec('sec-dossier','Mijn dossier','⑥', dossierHTML(d), favorites.length?`${favorites.length} gekozen`:'lokaal');
+  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d), 'optioneel');
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
@@ -1094,7 +1111,7 @@ function disruptionsHTML(d){
 
 
 function localStartHTML(d){
-  return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en maak een logische route rond <b>${esc(d.anchorName||d.destText)}</b>.</div>`;
+  return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en verken wat er rond <b>${esc(d.anchorName||d.destText)}</b> te doen is.</div><div id="map"></div>`;
 }
 
 function travelTitle(m){return {car:'Reisadvies — auto',ev:'Reisadvies — EV',transit:'Reisadvies — OV',bike:'Reisadvies — fiets',foot:'Reisadvies — te voet'}[m];}
@@ -1341,23 +1358,111 @@ function summarizePois(arr, n=8){
     return bits.join(' — ');
   }).join('\n');
 }
-function buildAIPrompt(d, routePlan){
+
+function loadDossiers(){
+  try{ return JSON.parse(localStorage.getItem(DOSSIER_KEY)||'[]'); }catch(e){ return []; }
+}
+function saveDossiers(list){
+  try{ localStorage.setItem(DOSSIER_KEY, JSON.stringify(list.slice(0,50))); }catch(e){}
+}
+function currentDossierTitle(d){
+  return `${d.destText || 'Bestemming'}${d.anchorName && d.anchorName!==d.destText ? ' — '+d.anchorName : ''}`;
+}
+function dossierHTML(d){
+  const selected = favorites.slice(0,30);
+  const selList = selected.length
+    ? `<div class="chips" style="margin-top:8px">${selected.map(f=>`<span class="chip on" style="cursor:default">✓ ${esc(f.name)}</span>`).join(' ')}</div>`
+    : `<div class="na" style="margin-top:8px">Nog niets gekozen. Tik op <b>+</b> bij plekken die je wilt onthouden.</div>`;
+  return `<div class="dossier-panel">
+    <div class="note"><b>Reiskompas v2:</b> geen dagplanning. Bewaar alleen de plekken die interessant zijn voor deze stad/buurt.</div>
+    ${selList}
+    <label class="lbl" for="dossier-title" style="margin-top:12px">Dossiernaam</label>
+    <input id="dossier-title" value="${escAttr(currentDossierTitle(d))}" />
+    <label class="lbl" for="dossier-notes" style="margin-top:12px">Notitie</label>
+    <textarea id="dossier-notes" rows="4" placeholder="Bijv. Parkeren bij Zuidpoort werkte prima. Volgende keer TU Delft bekijken."></textarea>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn solid" type="button" onclick="saveCurrentDossier()">💾 Bewaar dossier</button>
+      <button class="btn" type="button" onclick="resetTripSelection()">Reset selectie</button>
+      <button class="btn" type="button" onclick="renderSavedDossiers()">📚 Toon bibliotheek</button>
+    </div>
+    <div id="saved-dossiers" class="saved-list"></div>
+  </div>`;
+}
+
+function resetTripSelection(){
+  favorites=[];
+  document.querySelectorAll('.fav-btn').forEach(b=>{
+    b.classList.remove('on'); b.textContent='+'; b.title='Neem mee in deze trip';
+  });
+  if(window.__dossier) renderAll(window.__dossier);
+}
+
+function saveCurrentDossier(){
+  const d=window.__dossier;
+  if(!d) return;
+  const title=$('dossier-title')?.value?.trim() || currentDossierTitle(d);
+  const notes=$('dossier-notes')?.value || '';
+  const item={
+    id:'d'+Date.now(),
+    title,
+    notes,
+    date:d.date,
+    destText:d.destText,
+    anchorName:d.anchorName,
+    radiusKm:d.radiusKm,
+    startMode:d.startMode,
+    selected:favorites.slice(0,30),
+    savedAt:new Date().toISOString()
+  };
+  const list=loadDossiers();
+  list.unshift(item);
+  saveDossiers(list);
+  renderSavedDossiers();
+  renderSavedDossiers('library-list');
+}
+function deleteDossier(id){
+  saveDossiers(loadDossiers().filter(d=>d.id!==id));
+  renderSavedDossiers();
+  renderSavedDossiers('library-list');
+}
+function renderSavedDossiers(targetId='saved-dossiers'){
+  const box=$(targetId);
+  if(!box) return;
+  const list=loadDossiers();
+  if(!list.length){ box.innerHTML='<div class="na">Nog geen opgeslagen dossiers.</div>'; return; }
+  box.innerHTML=list.slice(0,20).map(d=>`<div class="saved-item">
+    <b>${esc(d.title)}</b>
+    <div class="na">${esc(d.destText||'')} · ${esc(d.anchorName||'')} · ${d.radiusKm||'?'} km · ${d.selected?.length||0} plekken</div>
+    ${d.notes?`<div class="sub2" style="margin-top:6px">${esc(d.notes)}</div>`:''}
+    ${d.selected?.length?`<div class="chips" style="margin-top:7px">${d.selected.slice(0,8).map(p=>`<span class="chip" style="cursor:default">${esc(p.name)}</span>`).join(' ')}</div>`:''}
+    <div class="saved-actions">
+      <button class="btn" type="button" onclick="deleteDossier('${escAttr(d.id)}')">Verwijder</button>
+    </div>
+  </div>`).join('');
+}
+function toggleLibrary(){
+  const drawer=$('library-drawer');
+  if(!drawer) return;
+  drawer.classList.toggle('hidden');
+  renderSavedDossiers('library-list');
+}
+
+function buildAIPrompt(d){
   const companions=[...state.companions].join(', ') || 'niet opgegeven';
-  const interests=INTERESTS.filter(i=>state.interests.has(i.id)).map(i=>i.label).join(', ') || 'algemene citytrip';
+  const interests=INTERESTS.filter(i=>state.interests.has(i.id)).map(i=>i.label).join(', ') || 'algemene stadsverkenning';
   const cuisines=[...state.cuisines].join(', ') || 'geen specifieke keuken';
   const weather=d.weather ? `${d.weather.max}°/${d.weather.min}°, ${wlabel(d.weather.code)[0]}, ${d.weather.precip!=null ? (d.weather.kind==='fc'?'neerslagkans ':'natte dagen ~')+d.weather.precip+'%' : 'neerslag onbekend'}` : 'geen weerdata';
   const area=d.anchorName || d.destText;
-  const routeTxt=(routePlan?.points||[]).map((p,i)=>`- ${i+1}. ${p.name}${p.tag?' ('+p.tag+')':''}${p.address?' — '+p.address:''}`).join('\n');
-  const favTxt=favorites.length ? favorites.slice(0,10).map((f,i)=>`${i+1}. ${f.name}`).join('\n') : 'Geen tripselecties geselecteerd.';
-  return `Ik gebruik een kleine open-data reisplanner (“Reiskompas”) en wil graag dat je als praktische reisadviseur meekijkt.
+  const selectedTxt=favorites.length ? favorites.slice(0,20).map((f,i)=>`${i+1}. ${f.name}${f.tag?' ('+f.tag+')':''}${f.address?' — '+f.address:''}`).join('\n') : 'Nog niets gekozen.';
+  return `Ik gebruik een kleine open-data stadsverkenner (“Reiskompas”) en wil graag dat je als praktische lokale gids meekijkt.
 
 Bestemming:
 - Stad/regio: ${d.destText}
-- Focusgebied/buurt: ${area}
+- Focusgebied: ${area}
+- Zoekstraal: ${d.radiusKm} km
 - Datum: ${d.date}
-- Aankomsttijd: ${d.time}
-- Vervoer: ${travelTitle(d.mode).replace('Reisadvies — ','')}
 - Startmodus: ${d.startMode==='local'?'ik ben al in de buurt':'ik reis erheen'}
+- Vervoer: ${travelTitle(d.mode).replace('Reisadvies — ','')}
 - Vertrekplaats: ${d.startMode==='local'?'niet nodig':(d.depText || 'niet opgegeven')}
 
 Gezelschap:
@@ -1374,45 +1479,33 @@ Weerindicatie:
 - ${weather}
 
 Voorgestelde bezienswaardigheden:
-${summarizePois(d.attractions,9) || 'Geen resultaten.'}
+${summarizePois(d.attractions,12) || 'Geen resultaten.'}
 
 Minder voor de hand liggende tips:
 ${summarizePois(hiddenGems(d.attractions, new Set((d.attractions||[]).slice(0,9).map(favId))),3) || 'Geen aparte verborgen parels gevonden.'}
 
 Eten:
-${summarizePois(d.eats,8) || 'Geen eetresultaten of eten niet geselecteerd.'}
+${summarizePois(d.eats,10) || 'Geen eetresultaten of eten niet geselecteerd.'}
 
 Drinken:
-${summarizePois(d.drinks,8) || 'Geen drinkresultaten of drinken niet geselecteerd.'}
+${summarizePois(d.drinks,10) || 'Geen drinkresultaten of drinken niet geselecteerd.'}
 
-Gekozen voor deze trip:
-${favTxt}
+Gekozen voor dit dossier:
+${selectedTxt}
 
-Logische routevolgorde uit Reiskompas:
-${routeTxt || 'Nog geen routevolgorde beschikbaar; gebruiker heeft mogelijk nog geen plekken gekozen.'}
-
-Maak hiervan een praktisch, menselijk routeadvies zonder strak tijdschema. Controleer in je advies ook expliciet mogelijke wegwerkzaamheden, spoorstoringen, evenementen of andere bereikbaarheidshinder voor deze datum/route, en zeg waar ik dat vlak voor vertrek moet verifiëren. 
-Houd rekening met:
-- logische volgorde en reistijd tussen plekken;
-- weer;
-- kinderen/gezelschap;
-- parkeer- of OV-realiteit;
-- lunch/koffie/rustmomenten;
-- niet te vol plannen.
-
-Geef:
-1. Een logische volgorde van stops.
-2. Welke stops dicht bij elkaar liggen.
-3. Een kortere variant als de dag tegenvalt.
-4. Een alternatief bij slecht weer.
-5. Eventuele waarschuwingen over openingstijden, reserveren, afstanden of verstoringen.
+Maak hiervan géén uurplanning en géén itinerary. Geef in plaats daarvan:
+1. Welke 3-5 plekken het meest de moeite waard lijken voor dit gezelschap.
+2. Welke plekken goed bij elkaar passen qua ligging of thema.
+3. Wat je zou bewaren voor een later bezoek.
+4. Waar je moet letten op openingstijden, reserveren, weer of bereikbaarheid.
+5. Eventuele lokale waarschuwingen rond verkeer, OV, evenementen of drukte.
 
 Gebruik alleen de informatie hierboven als basis. Zeg expliciet waar iets onzeker is.`;
 }
-function aiPromptHTML(d,plan){
-  const prompt=esc(buildAIPrompt(d,plan));
+function aiPromptHTML(d){
+  const prompt=esc(buildAIPrompt(d));
   return `<div class="ai-box">
-    <div class="note"><b>Geen API, geen accountkoppeling.</b> Reiskompas maakt alleen een nette prompt. Kopieer die naar Gemini, ChatGPT of Claude voor optioneel reisadvies.</div>
+    <div class="note"><b>Geen API, geen accountkoppeling.</b> Reiskompas maakt alleen een nette prompt. Kopieer die naar Gemini of ChatGPT voor optioneel stadsadvies.</div>
     <textarea id="aiPromptText" readonly>${prompt}</textarea>
     <div class="ai-tools">
       <button class="btn solid" type="button" onclick="copyAIPrompt()">📋 Kopieer prompt</button>
@@ -1496,6 +1589,16 @@ function initMap(d){
 }
 
 
+
+function openAboutModal(){
+  const m=$('aboutModal');
+  if(m) m.classList.remove('hidden');
+}
+function closeAboutModal(){
+  const m=$('aboutModal');
+  if(m) m.classList.add('hidden');
+}
+
 function setupInstallPrompt(){
   const box=$('installPrompt'), btn=$('installDismiss');
   if(!box || localStorage.getItem(INSTALL_KEY)==='1') return;
@@ -1540,6 +1643,9 @@ function initReiskompas(){
   }
 
   try{ setupInstallPrompt(); }catch(e){}
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAboutModal(); });
+  const about=$('aboutModal');
+  if(about) about.addEventListener('click',e=>{ if(e.target===about) closeAboutModal(); });
 }
 
 if(document.readyState === 'loading'){

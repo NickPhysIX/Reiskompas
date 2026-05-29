@@ -1,9 +1,8 @@
-# QA-check v1.9.10
+# QA-check v2.0-beta.1
 
-- app_version_v1_9_10: True
-- sw_cache_v1_9_10: True
-- sweepOldCaches_defined: True
-- setupAreaCustom_no_key_bug: True
-- resolveCustomArea: True
-- geocoder_hint: True
+- version_beta_1: True
+- sw_cache_beta_1: True
+- footer_creator: True
+- about_modal: True
+- modal_close_escape: True
 - app_js_syntax_ok: True

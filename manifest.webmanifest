@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Klaar voor je citytrip met robuuste init, geocoding en buurtinvoer",
+  "description": "Persoonlijke stadsverkenner door Niels Braakman",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -28,5 +28,5 @@
       "purpose": "maskable"
     }
   ],
-  "version": "1.9.10"
+  "version": "2.0-beta.1"
 }
