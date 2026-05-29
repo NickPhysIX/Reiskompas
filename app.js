@@ -8,12 +8,15 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.9.2';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
 const sourceStatus = { overpass: 'live' };
+const MAX_ROUTE_FAVORITE_DISTANCE_KM = 3;
+const ROUTE_TOTAL_WARNING_KM = 5;
+let routeFavoriteWarning = null;
 let favorites = loadFavorites();
 
 function cacheKey(type, parts){ return CACHE_PREFIX + type + ':' + parts.map(p=>String(p ?? '').toLowerCase()).join('|'); }
@@ -946,9 +949,35 @@ function uniqueRoutePoints(points){
   }
   return out;
 }
+
+function currentAnchorForRoute(d){
+  return d?.anchor || d?.dest || null;
+}
+function localFavoriteCandidates(d){
+  const anchor=currentAnchorForRoute(d);
+  const favs=favorites.map(f=>normalizeRoutePoint(f,'favoriet')).filter(Boolean);
+  if(!anchor || !favs.length) return {local:favs, remote:[]};
+  const local=[], remote=[];
+  favs.forEach(f=>{
+    const km=pointDistance(anchor,f);
+    if(km==null || km<=MAX_ROUTE_FAVORITE_DISTANCE_KM) local.push({...f,_favDist:km});
+    else remote.push({...f,_favDist:km});
+  });
+  return {local, remote};
+}
+
 function routeCandidates(d){
-  const favs = favorites.map(f=>normalizeRoutePoint(f,'favoriet')).filter(Boolean);
-  if(favs.length) return uniqueRoutePoints(favs).slice(0,8);
+  routeFavoriteWarning=null;
+  const scoped=localFavoriteCandidates(d);
+  if(scoped.remote.length){
+    routeFavoriteWarning={
+      ignored:scoped.remote.length,
+      used:scoped.local.length,
+      maxKm:MAX_ROUTE_FAVORITE_DISTANCE_KM,
+      names:scoped.remote.slice(0,5).map(f=>f.name)
+    };
+  }
+  if(scoped.local.length) return uniqueRoutePoints(scoped.local).slice(0,8);
 
   const picks=[];
   (d.attractions||[]).slice(0,4).forEach(e=>picks.push(normalizeRoutePoint(e,'bezienswaardigheid')));
@@ -990,7 +1019,7 @@ function buildRoutePlan(d){
     const km=pointDistance(points[i],points[i+1]);
     if(km!=null){ total+=km; hops.push(km); } else hops.push(null);
   }
-  return {start, stops:ordered, points, hops, totalKm:total, usesFavorites:favorites.length>0};
+  return {start, stops:ordered, points, hops, totalKm:total, usesFavorites:ordered.some(p=>p.role==='favoriet'), favoriteWarning:routeFavoriteWarning};
 }
 function routeMapsLink(routePlan,d){
   const pts=routePlan.points||[];
@@ -1009,6 +1038,13 @@ function routeHTML(routePlan,d){
   const intro=routePlan.usesFavorites
     ? 'Gebaseerd op je favorieten.'
     : 'Gebaseerd op de hoogst gerankte plekken omdat er nog geen favorieten zijn gekozen.';
+  const warnings=[];
+  if(routePlan.favoriteWarning?.ignored){
+    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ ${routePlan.favoriteWarning.ignored} opgeslagen favoriet(en) liggen meer dan ${routePlan.favoriteWarning.maxKm} km buiten dit focusgebied en zijn voor deze route genegeerd.${routePlan.favoriteWarning.names?.length?`<br><span class="na">Genegeerd: ${routePlan.favoriteWarning.names.map(esc).join(' · ')}</span>`:''}</div>`);
+  }
+  if(routePlan.totalKm > ROUTE_TOTAL_WARNING_KM){
+    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ Deze route is indicatief ${distLabel(routePlan.totalKm)}. Dat is waarschijnlijk te lang als stadswandeling. Kies minder favorieten of beperk het focusgebied.</div>`);
+  }
   const rows=routePlan.points.map((p,i)=>{
     const hop = i<routePlan.hops.length && routePlan.hops[i]!=null
       ? `<div class="route-hop">↓ ${distLabel(routePlan.hops[i])} naar de volgende stop</div>` : '';
@@ -1018,7 +1054,7 @@ function routeHTML(routePlan,d){
       <div class="meta">${esc(p.tag||'plek')}${p.address?` · ${esc(p.address)}`:''}</div></div>
     </div>${hop}`;
   }).join('');
-  return `<div class="note route-summary"><b>Geen strak tijdschema.</b> Dit is een praktische ${modeLabel}: ${intro} Totale indicatieve afstand: <b>${distLabel(routePlan.totalKm)}</b>.</div>
+  return `${warnings.join('')}<div class="note route-summary"><b>Geen strak tijdschema.</b> Dit is een praktische ${modeLabel}: ${intro} Totale indicatieve afstand: <b>${distLabel(routePlan.totalKm)}</b>.</div>
     <div class="route-list">${rows}</div>
     <div class="actions" style="margin-top:12px">
       <a class="btn solid" target="_blank" rel="noopener" href="${routeMapsLink(routePlan,d)}">🗺️ Open route in Maps</a>

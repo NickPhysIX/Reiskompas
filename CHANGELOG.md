@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.2
+
+Bugfix-release voor routefavorieten.
+
+- Favorieten worden nu gefilterd op afstand tot het huidige focusgebied.
+- Alleen favorieten binnen 3 km worden automatisch meegenomen in de logische route.
+- Oude favorieten uit andere steden/regio’s beïnvloeden nieuwe routes niet meer.
+- Waarschuwing toegevoegd wanneer favorieten buiten het focusgebied zijn genegeerd.
+- Extra sanity-warning toegevoegd voor routes langer dan 5 km.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.2.
+
 ## v1.9.1
 
 Housekeeping-release op basis van Claude’s v1.9.

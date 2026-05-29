@@ -1,4 +1,4 @@
-# Reiskompas v1.9.1
+# Reiskompas v1.9.2
 
 Reiskompas is een kleine, client-side PWA voor het voorbereiden van een stadsbezoek met openbare bronnen.
 
@@ -57,14 +57,22 @@ Daarna maakt Reiskompas een praktisch reisdossier met:
 - AI-promptgenerator zonder API-koppeling.
 - PWA-installatie met manifest en service worker.
 
-## v1.9.1
+## v1.9.2
 
 Housekeeping-release op basis van v1.9.
 
 - README opgeschoond.
 - Verouderde documentatie over oude agenda-export verwijderd.
 - Terminologie gelijkgetrokken met de huidige functie: logische routevoorstellen.
-- Versies en metadata bijgewerkt naar v1.9.1.
+- Versies en metadata bijgewerkt naar v1.9.2.
 - Service-worker cache gebumpt.
 
 Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
+
+
+## v1.9.2
+
+- Routefavorieten worden nu gefilterd op afstand tot het huidige focusgebied.
+- Favorieten verder dan 3 km worden genegeerd voor de route.
+- Waarschuwing toegevoegd wanneer oude favorieten uit een andere stad/regio worden genegeerd.
+- Sanity-warning toegevoegd voor routes langer dan 5 km.
