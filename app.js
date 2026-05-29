@@ -8,10 +8,10 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.3';
-const CACHE_PREFIX = 'reiskompas-cache-v1.3:';
-const FAV_KEY = 'reiskompas-favorites-v1.3';
-const INSTALL_KEY = 'reiskompas-install-dismissed-v1.3';
+const APP_VERSION = '1.4.1';
+const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
+const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
+const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
 const sourceStatus = { overpass: 'live' };
 let favorites = loadFavorites();
@@ -33,17 +33,40 @@ function loadFavorites(){
   try{ return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); }catch(e){ return []; }
 }
 function saveFavorites(){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(favorites.slice(0,50))); }catch(e){} }
+function sweepOldCaches(){
+  // ruim cache-sleutels van oudere versies op (Gemini-bevinding); keys eerst
+  // verzamelen, dán wissen — anders verschuiven de indexen tijdens removeItem.
+  try{
+    const kill=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && k.startsWith('reiskompas-cache-') && !k.startsWith(CACHE_PREFIX)) kill.push(k);
+    }
+    kill.forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+}
+function migrateFavorites(){
+  // eenmalige overname van favorieten uit oude versie-gebonden sleutels
+  if(favorites.length) return;
+  for(const k of ['reiskompas-favorites-v1.3','reiskompas-favorites-v1.2','reiskompas-favorites-v1.1']){
+    try{ const old=JSON.parse(localStorage.getItem(k)||'[]'); if(Array.isArray(old)&&old.length){ favorites=old; saveFavorites(); break; } }catch(e){}
+  }
+}
 function favId(e){ return e && e.id ? e.id : ((e?.tags?.name||'')+'@'+Math.round((e?.lat||0)*10000)+','+Math.round((e?.lon||0)*10000)); }
 function isFav(e){ const id=favId(e); return favorites.some(f=>f.id===id); }
-function toggleFavorite(id){
-  const btn = document.querySelector(`[data-fav="${CSS.escape(id)}"]`);
-  const raw = btn?.dataset.poi;
-  if(!raw) return;
-  const poi = JSON.parse(decodeURIComponent(raw));
+function toggleFavorite(btn){
+  const id  = btn && btn.dataset ? btn.dataset.fav : null;
+  const raw = btn && btn.dataset ? btn.dataset.poi : null;
+  if(!id || !raw) return;
+  let poi; try{ poi = JSON.parse(decodeURIComponent(raw)); }catch(e){ return; }
   const ix = favorites.findIndex(f=>f.id===id);
   if(ix>=0) favorites.splice(ix,1); else favorites.unshift(poi);
   saveFavorites();
-  document.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b=>{ const on=ix<0; b.classList.toggle('on',on); b.textContent=on?'★':'☆'; b.title=on?'Verwijder favoriet':'Bewaar als favoriet'; });
+  const on = ix<0;
+  document.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b=>{
+    b.classList.toggle('on',on); b.textContent=on?'★':'☆';
+    b.title=on?'Verwijder favoriet':'Bewaar als favoriet';
+  });
 }
 function serializePoi(e, tag){ return encodeURIComponent(JSON.stringify({id:favId(e), name:e.tags.name, tag:tag||catLabel(e), lat:e.lat, lon:e.lon, address:addr(e.tags)})); }
 function asNum(n){ return Math.round(Number(n)*1000)/1000; }
@@ -127,15 +150,15 @@ function buildChips(){
 function toggleSet(set,v,el){ if(el.classList.contains('on'))set.add(v); else set.delete(v); }
 
 /* ---------- geocoding ---------- */
-let acTimer=null;
 function setupAutocomplete(inputId,listId,key){
   const inp=$(inputId), list=$(listId);
+  let timer=null;
   inp.addEventListener('input',()=>{
     state[key]=null;
     const q=inp.value.trim();
-    clearTimeout(acTimer);
+    clearTimeout(timer);
     if(q.length<2){ list.classList.remove('open'); return; }
-    acTimer=setTimeout(async()=>{
+    timer=setTimeout(async()=>{
       try{
         const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lang=en`);
         const d=await r.json();
@@ -307,17 +330,18 @@ function poiCard(e,tag,extra=''){
   const t=e.tags;
   const id=favId(e);
   const on=isFav(e);
-  const oh=t.opening_hours?`<div class="oh">🕒 ${t.opening_hours}</div>`:`<div class="oh na">openingstijden n.b.</div>`;
-  const a=addr(t); const ad=a?`<div class="ad">${a}</div>`:`<div class="ad na">adres n.b.</div>`;
+  const oh=t.opening_hours?`<div class="oh">🕒 ${esc(t.opening_hours)}</div>`:`<div class="oh na">openingstijden n.b.</div>`;
+  const a=addr(t); const ad=a?`<div class="ad">${esc(a)}</div>`:`<div class="ad na">adres n.b.</div>`;
   return `<div class="poi">
-    <button class="fav-btn ${on?'on':''}" data-fav="${esc(id)}" data-poi="${serializePoi(e,tag)}" onclick="toggleFavorite('${esc(id)}')" title="${on?'Verwijder favoriet':'Bewaar als favoriet'}" type="button">${on?'★':'☆'}</button>
-    ${tag?`<div class="tag">${tag}</div>`:''}
+    <button class="fav-btn ${on?'on':''}" data-fav="${escAttr(id)}" data-poi="${serializePoi(e,tag)}" title="${on?'Verwijder favoriet':'Bewaar als favoriet'}" type="button">${on?'★':'☆'}</button>
+    ${tag?`<div class="tag">${esc(tag)}</div>`:''}
     <div class="nm">${esc(t.name)}</div>
     ${ad}${oh}${extra}
     <a class="lk" href="${gmaps(e.lat,e.lon)}" target="_blank" rel="noopener">Open in kaart →</a>
   </div>`;
 }
 function esc(s){return (s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function escAttr(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /* ---------- routing (OSRM, auto) ---------- */
 async function osrmRoute(o,d){
@@ -350,7 +374,7 @@ function busyness(date,time){
 }
 
 
-/* ---------- v1.1 ranking ---------- */
+/* ---------- ranking ---------- */
 function childScore(e,kids){
   if(kids==='none') return 0;
   const t=e.tags||{}, hay=((t.name||'')+' '+(t.tourism||'')+' '+(t.leisure||'')+' '+(t.amenity||'')+' '+(t.shop||'')).toLowerCase();
@@ -377,18 +401,30 @@ function interestScore(e, chosen){
   if(t.wikidata || t.wikipedia) s+=3;
   return s;
 }
-function rankPlaces(arr, chosen, kids){
-  return arr.map((e,i)=>({e,i,s:interestScore(e,chosen)+childScore(e,kids)}))
+function companionScore(e, companions){
+  if(!companions || !companions.size) return 0;
+  const t=e.tags||{}, am=t.amenity||'', le=t.leisure||'', to=t.tourism||'';
+  let s=0;
+  if(companions.has('Vrienden')){ if(/bar|pub|nightclub|biergarten/.test(am)) s+=4; if(le==='amusement_arcade') s+=2; }
+  if(companions.has('Gezin')){
+    if(/playground|park|garden/.test(le) || /zoo|theme_park/.test(to) || am==='ice_cream') s+=4;
+    if(/nightclub|bar|pub/.test(am)) s-=3;
+  }
+  return s;
+}
+function rankPlaces(arr, chosen, kids, companions){
+  return arr.map((e,i)=>({e,i,s:interestScore(e,chosen)+childScore(e,kids)+companionScore(e,companions)}))
     .sort((a,b)=> b.s-a.s || a.i-b.i)
     .map(x=>x.e);
 }
-function hiddenGems(arr){
+function hiddenGems(arr, shownIds){
   return arr.filter(e=>{
+    if(shownIds && shownIds.has(favId(e))) return false;   // niet dubbel met "Zien & doen"
     const t=e.tags||{};
     const hay=((t.name||'')+' '+Object.values(t).join(' ')).toLowerCase();
-    const mainstream = t.wikidata || t.wikipedia || /central|station|museum|cathedral|palace|castle|rijksmuseum|louvre|colosseum|eiffel/.test(hay);
+    const mainstream = t.wikidata || t.wikipedia || /central|cathedral|palace|rijksmuseum|louvre|colosseum|eiffel/.test(hay);
     return !mainstream && (t.shop || t.leisure || t.amenity || t.tourism || t.historic);
-  }).slice(9,15).slice(0,3);
+  }).slice(0,3);
 }
 function sourceBadges(){
   const st=sourceStatus.overpass;
@@ -434,9 +470,7 @@ async function generate(){
   if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]');
   clauses=[...new Set(clauses)];
   let attractions=dedupe(await overpass(clauses,C.lat,C.lon,4500,100,'poi'));
-  // boost op naam (lego/comics/scifi)
-  const boosts=chosen.map(it=>it.boost).filter(Boolean);
-  attractions = rankPlaces(attractions, chosen, kids);
+  attractions = rankPlaces(attractions, chosen, kids, state.companions);
 
   // eten / drinken
   let eats=[],drinks=[];
@@ -456,7 +490,9 @@ async function generate(){
         return cuiRes.some(cu=>cu.re.test(c)); });
     }
     if(kids !== 'none') eats.sort((a,b)=> childScore(b,kids)-childScore(a,kids));
-    if(state.noAlcohol){ // mocktail/koffie eerst: cafes vooraan, bars achteraan
+    // gezelschap stuurt de volgorde van drinkplekken (vrienden → bars/pubs vooraan)
+    drinks.sort((a,b)=> companionScore(b,state.companions)-companionScore(a,state.companions));
+    if(state.noAlcohol){ // alcoholvrij: cafés/koffie vooraan, bars achteraan
       drinks.sort((a,b)=> (a.tags.amenity==='cafe'?-1:1)-(b.tags.amenity==='cafe'?-1:1));
     }
     eats=eats.slice(0,9); drinks=drinks.slice(0,9);
@@ -513,8 +549,9 @@ function renderAll(d){
     : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`;
   sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(9,d.attractions.length)} plekken`:'');
 
-  // hidden gems
-  const gems = hiddenGems(d.attractions);
+  // hidden gems — sluit de al getoonde 9 uit
+  const shownIds = new Set(d.attractions.slice(0,9).map(favId));
+  const gems = hiddenGems(d.attractions, shownIds);
   if(gems.length){
     sec('sec-gems','Niet iedereen kent deze','②b',`<div class="grid">${gems.map(e=>poiCard(e,catLabel(e))).join('')}</div>`,`${gems.length} tips`);
   } else clearSec('sec-gems');
@@ -546,7 +583,7 @@ function renderAll(d){
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
-    v1.1 gebruikt live data waar mogelijk, met lokale cache en Overpass-failover. Geen API-keys. Prijzen, live verkeersdrukte en exacte OV-tijden zitten niet in gratis open bronnen — daarvoor staan doorkliks naar de officiële planners.
+    Live data waar mogelijk, met lokale cache en Overpass-failover. Geen API-keys. Prijzen, live verkeersdrukte en exacte OV-tijden zitten niet in gratis open bronnen — daarvoor staan doorkliks naar de officiële planners.
     <div class="regen"><button class="btn" onclick="document.getElementById('go').scrollIntoView({behavior:'smooth'})">↺ Plan aanpassen</button></div>`;
 
   // map
@@ -655,7 +692,7 @@ function buildPlan(d){
   if(kids) push('Pauze in een park / ijsje', 40);
   if(act[2]) push(act[2].tags.name, 75, act[2].tags.name);
   if(state.eat) push('Diner', 90, eat[1]?.tags.name||eat[0]?.tags.name);
-  if(state.drink) push(state.noAlcohol?'Afsluiter — mocktail / koffie':'Borrel', 60, drink[0]?.tags.name);
+  if(state.drink) push(state.noAlcohol?'Afsluiter — mocktail / koffie':(state.companions.has('Vrienden')?'Borrel met vrienden':'Borrel'), 60, drink[0]?.tags.name);
   push('Vertrek / terugreis', 0);
   return items;
 }
@@ -701,7 +738,7 @@ function initMap(d){
   _map=L.map('map',{scrollWheelZoom:false}).setView([d.dest.lat,d.dest.lon],13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
   const ink='#bd4a26', teal='#1d6a5c';
-  L.marker([d.dest.lat,d.dest.lon]).addTo(_map).bindPopup('<b>'+esc(d.destText)+'</b>');
+  L.circleMarker([d.dest.lat,d.dest.lon],{radius:9,color:'#f3e9da',weight:2,fillColor:'#bd4a26',fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.destText)+'</b>').openPopup();
   d.attractions.slice(0,12).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:5,color:teal,fillColor:teal,fillOpacity:.7,weight:1}).addTo(_map).bindPopup(esc(e.tags.name)));
   d.eats.slice(0,8).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:ink,fillColor:ink,fillOpacity:.7,weight:1}).addTo(_map).bindPopup('🍽️ '+esc(e.tags.name)));
   (d.parking||[]).slice(0,6).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:'#444',fillColor:'#888',fillOpacity:.6,weight:1}).addTo(_map).bindPopup('🅿️ '+esc(e.tags.name||'Parkeren')));
@@ -720,12 +757,19 @@ function setupInstallPrompt(){
 
 /* ---------- init ---------- */
 window.addEventListener('DOMContentLoaded',()=>{
+  sweepOldCaches();
+  migrateFavorites();
   buildChips();
   setupAutocomplete('dest','dest-ac','dest');
   setupAutocomplete('dep','dep-ac','dep');
   const t=new Date(); t.setDate(t.getDate()+1);
   $('date').value=t.toISOString().split('T')[0];
   $('go').addEventListener('click',generate);
+  // favorieten via event-delegation — werkt ook voor namen met een apostrof (O'Briens, L'Escale)
+  document.addEventListener('click',ev=>{
+    const btn = ev.target.closest && ev.target.closest('.fav-btn');
+    if(btn){ ev.preventDefault(); toggleFavorite(btn); }
+  });
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 
   setupInstallPrompt();
