@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4.2
+
+UI-fix.
+
+- **Tijdstipveld op iOS netjes in het kader.** De iOS-polish (appearance-reset, links uitlijnen, hoogte) gold alleen voor `input[type=date]`; nu ook voor `input[type=time]`, zodat "Rond hoe laat in de stad?" net als het datumveld links uitlijnt en niet meer gecentreerd in z'n kader zweeft.
+- Versie + service-worker-cachenaam gebumpt naar v1.4.2 — dat forceert meteen de update op de volgende load (geen handmatige SW-refresh meer nodig).
+
 ## v1.4.1
 
 Patch-release: laatste technische schuld + nieuwe app-icon.

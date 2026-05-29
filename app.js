@@ -8,7 +8,7 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.4.2';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache

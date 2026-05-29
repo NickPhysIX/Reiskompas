@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v1.4.1 — klaar voor je citytrip</title>
-<meta name="description" content="Reiskompas v1.4.1: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
+<title>Reiskompas v1.4.2 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v1.4.2: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -121,13 +121,15 @@ input[type=text],input[type=date],input[type=time],select{
 }
 input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,74,38,.16);}
 
-input[type=date]{
+input[type=date],input[type=time]{
   -webkit-appearance:none;appearance:none;display:block;min-height:52px;line-height:1.2;text-align:left;
 }
-input[type=date]::-webkit-date-and-time-value{
+input[type=date]::-webkit-date-and-time-value,
+input[type=time]::-webkit-date-and-time-value{
   text-align:left;min-height:1.2em;
 }
-input[type=date]::-webkit-calendar-picker-indicator{
+input[type=date]::-webkit-calendar-picker-indicator,
+input[type=time]::-webkit-calendar-picker-indicator{
   margin-left:auto;
 }
 .ac-wrap{position:relative;}
@@ -321,7 +323,7 @@ input[type=date]::-webkit-calendar-picker-indicator{
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.4.1</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.4.2</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
