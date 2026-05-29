@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v1.9.2 — klaar voor je citytrip</title>
-<meta name="description" content="Reiskompas v1.9.2: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
+<title>Reiskompas v1.9.7 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v1.9.7: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -274,6 +274,14 @@ input[type=time]::-webkit-calendar-picker-indicator{
 .colophon b{color:var(--ink-soft);}
 .regen{margin-top:10px;}
 
+.mode-hint{font-size:12px;color:var(--ink-soft);line-height:1.45;margin-top:7px;}
+.field.disabled{opacity:.55;}
+.field.disabled input,.field.disabled select{pointer-events:none;}
+
+
+.more-row{margin-top:12px;text-align:center;}
+
+
 .route-list{display:flex;flex-direction:column;gap:8px;}
 .route-step{
   background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;
@@ -366,7 +374,7 @@ details.plan-details .actions{padding:0 16px 14px;}
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.9.2</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.9.7</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -398,8 +406,18 @@ details.plan-details .actions{padding:0 16px 14px;}
         <div class="hint" id="area-hint">Vult zich nadat je een bestemming kiest — handig in grote steden.</div>
       </div>
 
+      <div class="field">
+        <label class="lbl">Startmodus</label>
+        <div class="chips" id="start-mode">
+          <span class="chip on" data-start="travel">🚗 Ik reis erheen</span>
+          <span class="chip" data-start="local">📍 Ik ben al in de buurt</span>
+        </div>
+        <div class="mode-hint" id="start-mode-hint">Gebruik vertrekplaats, reisadvies, parkeren/OV en verstoringen.</div>
+      </div>
+
+
       <div class="row2">
-        <div class="field">
+        <div class="field" id="dep-field">
           <label class="lbl" for="dep">Waar vertrek je?</label>
           <div class="ac-wrap">
             <input type="text" id="dep" placeholder="vertrekstad" autocomplete="off" />

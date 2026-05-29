@@ -1,4 +1,4 @@
-# Reiskompas v1.9.2
+# Reiskompas v1.9.7
 
 Reiskompas is een kleine, client-side PWA voor het voorbereiden van een stadsbezoek met openbare bronnen.
 
@@ -57,22 +57,49 @@ Daarna maakt Reiskompas een praktisch reisdossier met:
 - AI-promptgenerator zonder API-koppeling.
 - PWA-installatie met manifest en service worker.
 
-## v1.9.2
+## v1.9.7
 
-Housekeeping-release op basis van v1.9.
+Housekeeping-release op basis van v1.9.7.
 
 - README opgeschoond.
 - Verouderde documentatie over oude agenda-export verwijderd.
 - Terminologie gelijkgetrokken met de huidige functie: logische routevoorstellen.
-- Versies en metadata bijgewerkt naar v1.9.2.
+- Versies en metadata bijgewerkt naar v1.9.7.
 - Service-worker cache gebumpt.
 
 Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
 
 
-## v1.9.2
+## v1.9.7
 
 - Routefavorieten worden nu gefilterd op afstand tot het huidige focusgebied.
 - Favorieten verder dan 3 km worden genegeerd voor de route.
 - Waarschuwing toegevoegd wanneer oude favorieten uit een andere stad/regio worden genegeerd.
 - Sanity-warning toegevoegd voor routes langer dan 5 km.
+
+
+## v1.9.7
+
+- Permanente favorieten vervangen door sessiegebonden **Interessant voor deze trip**.
+- Tripselecties worden niet meer opgeslagen in localStorage en vervuilen geen volgende bestemming.
+- AI-prompt gebruikt alleen lokale tripselecties binnen het huidige focusgebied.
+- Curaçao-labeling verbeterd zodat Willemstad/Jan Thiel niet als Netherlands in de prompt verschijnen.
+- 'Laad meer'-knoppen toegevoegd voor bezienswaardigheden, eten en drinken.
+
+
+## v1.9.7
+
+- Selectie & route polish.
+- Route gebruikt standaard alleen plekken die met `+` zijn gekozen voor deze trip.
+- Als er nog geen selectie is, toont Reiskompas geen automatische route maar een knop **Gebruik suggesties toch**.
+- `+` / `✓`-interface verduidelijkt dat het om tijdelijke tripselectie gaat, niet om permanente favorieten.
+- Route-sectie toont nu een overzicht van gekozen plekken en genegeerde plekken buiten het focusgebied.
+
+
+## v1.9.7
+
+- Startmodus toegevoegd: **Ik reis erheen** / **Ik ben al in de buurt**.
+- In lokale modus is vertrekplaats niet meer nodig.
+- In lokale modus worden reisadvies en verstoringen vanaf vertrekplaats overgeslagen.
+- Logische route start dan vanaf het focusgebied/buurtanker.
+- AI-prompt vermeldt de startmodus.

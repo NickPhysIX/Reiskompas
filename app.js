@@ -8,16 +8,17 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.9.7';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
-const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
 const sourceStatus = { overpass: 'live' };
 const MAX_ROUTE_FAVORITE_DISTANCE_KM = 3;
 const ROUTE_TOTAL_WARNING_KM = 5;
 let routeFavoriteWarning = null;
-let favorites = loadFavorites();
+let displayCounts = { attractions: 9, eats: 9, drinks: 9 };
+let routeUseSuggestions = false;
+let favorites = []; // trip-specifieke selectie; niet persistent
 
 function cacheKey(type, parts){ return CACHE_PREFIX + type + ':' + parts.map(p=>String(p ?? '').toLowerCase()).join('|'); }
 function cacheGet(type, parts, ttl){
@@ -32,29 +33,9 @@ function cacheGet(type, parts, ttl){
 function cacheSet(type, parts, val){
   try{ localStorage.setItem(cacheKey(type, parts), JSON.stringify({t:Date.now(), v:val})); }catch(e){}
 }
-function loadFavorites(){
-  try{ return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); }catch(e){ return []; }
-}
-function saveFavorites(){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(favorites.slice(0,50))); }catch(e){} }
-function sweepOldCaches(){
-  // ruim cache-sleutels van oudere versies op (Gemini-bevinding); keys eerst
-  // verzamelen, dán wissen — anders verschuiven de indexen tijdens removeItem.
-  try{
-    const kill=[];
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      if(k && k.startsWith('reiskompas-cache-') && !k.startsWith(CACHE_PREFIX)) kill.push(k);
-    }
-    kill.forEach(k=>localStorage.removeItem(k));
-  }catch(e){}
-}
-function migrateFavorites(){
-  // eenmalige overname van favorieten uit oude versie-gebonden sleutels
-  if(favorites.length) return;
-  for(const k of ['reiskompas-favorites-v1.3','reiskompas-favorites-v1.2','reiskompas-favorites-v1.1']){
-    try{ const old=JSON.parse(localStorage.getItem(k)||'[]'); if(Array.isArray(old)&&old.length){ favorites=old; saveFavorites(); break; } }catch(e){}
-  }
-}
+function loadFavorites(){ return []; }
+function saveFavorites(){ /* selectie blijft alleen in deze browser-sessie */ }
+function migrateFavorites(){ /* v1.9.3: oude permanente tripselecties bewust niet migreren */ }
 function favId(e){ return e && e.id ? e.id : ((e?.tags?.name||'')+'@'+Math.round((e?.lat||0)*10000)+','+Math.round((e?.lon||0)*10000)); }
 function isFav(e){ const id=favId(e); return favorites.some(f=>f.id===id); }
 function toggleFavorite(btn){
@@ -67,12 +48,29 @@ function toggleFavorite(btn){
   saveFavorites();
   const on = ix<0;
   document.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b=>{
-    b.classList.toggle('on',on); b.textContent=on?'★':'☆';
-    b.title=on?'Verwijder favoriet':'Bewaar als favoriet';
+    b.classList.toggle('on',on); b.textContent=on?'✓':'+';
+    b.title=on?'Verwijder uit deze trip':'Neem mee in deze trip';
   });
 }
 function serializePoi(e, tag){ return encodeURIComponent(JSON.stringify({id:favId(e), name:e.tags.name, tag:tag||catLabel(e), lat:e.lat, lon:e.lon, address:addr(e.tags)})); }
 function asNum(n){ return Math.round(Number(n)*1000)/1000; }
+
+function displayCountry(country, cc=''){
+  const code=String(cc||'').toLowerCase();
+  const raw=String(country||'').trim();
+  const overrides={cw:'Curaçao',aw:'Aruba',sx:'Sint Maarten',bq:'Caribbean Netherlands'};
+  if(overrides[code]) return overrides[code];
+  if(/curacao|curaçao/i.test(raw)) return 'Curaçao';
+  return raw || '';
+}
+function displayPlaceName(place, fallback=''){
+  if(!place) return fallback;
+  const name=place.name || fallback || '';
+  const country=displayCountry(place.country, place.cc);
+  if(!country) return name;
+  return `${name}, ${country}`;
+}
+
 
 
 /* ---------- interesse → OSM tags ---------- */
@@ -108,6 +106,7 @@ const CUISINES = [
 
 const state = {
   dest:null, dep:null, area:null, _areas:[],
+  startMode:'travel',
   companions:new Set(['Samen']),
   interests:new Set(),
   eat:false, drink:false, noAlcohol:false,
@@ -136,6 +135,17 @@ function buildChips(){
     if(state.companions.has(c.dataset.v)) c.classList.add('on');
     c.onclick=()=>{ c.classList.toggle('on'); toggleSet(state.companions,c.dataset.v,c); };
   });
+  // start mode
+  document.querySelectorAll('[data-start]').forEach(c=>{
+    c.onclick=()=>{
+      document.querySelectorAll('[data-start]').forEach(x=>x.classList.remove('on'));
+      c.classList.add('on');
+      state.startMode=c.dataset.start || 'travel';
+      applyStartModeUI();
+    };
+  });
+  applyStartModeUI();
+
   // eat / drink
   document.querySelectorAll('[data-eat]').forEach(c=>{
     c.onclick=()=>{
@@ -151,6 +161,17 @@ function buildChips(){
   };
 }
 function toggleSet(set,v,el){ if(el.classList.contains('on'))set.add(v); else set.delete(v); }
+
+function applyStartModeUI(){
+  const local = state.startMode === 'local';
+  const depField=$('dep-field'), dep=$('dep'), hint=$('start-mode-hint');
+  if(depField) depField.classList.toggle('disabled', local);
+  if(dep) dep.disabled = local;
+  if(hint) hint.textContent = local
+    ? 'Je bent al in of rond het focusgebied. Reiskompas slaat reisadvies vanaf vertrekplaats over.'
+    : 'Gebruik vertrekplaats, reisadvies, parkeren/OV en verstoringen.';
+}
+
 
 /* ---------- geocoding ---------- */
 function setupAutocomplete(inputId,listId,key){
@@ -170,14 +191,14 @@ function setupAutocomplete(inputId,listId,key){
         (d.features||[]).forEach(f=>{
           const p=f.properties||{};
           const city=p.name||p.city||'';
-          const ctx=[p.state,p.country].filter(Boolean).join(', ');
+          const ctx=[p.state,displayCountry(p.country,p.countrycode)].filter(Boolean).join(', ');
           const it=document.createElement('div');
           it.className='ac-item';
           it.innerHTML=`${city}<small>${ctx}</small>`;
           it.onclick=()=>{
-            inp.value=city + (p.country?`, ${p.country}`:'');
+            inp.value=city + (displayCountry(p.country,p.countrycode)?`, ${displayCountry(p.country,p.countrycode)}`:'');
             state[key]={lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],
-                        name:city,country:p.country||'',cc:(p.countrycode||'').toLowerCase()};
+                        name:city,country:displayCountry(p.country,p.countrycode),cc:(p.countrycode||'').toLowerCase()};
             list.classList.remove('open');
             if(key==='dest') loadAreasFor(state.dest);
           };
@@ -198,7 +219,7 @@ async function resolveCity(text){
     if(!d.length) return null;
     const p=d[0];
     return {lat:+p.lat,lon:+p.lon,name:(p.display_name||text).split(',')[0],
-            country:p.address?.country||'',cc:(p.address?.country_code||'').toLowerCase()};
+            country:displayCountry(p.address?.country,p.address?.country_code),cc:(p.address?.country_code||'').toLowerCase()};
   }catch(e){ return null; }
 }
 
@@ -232,6 +253,27 @@ async function resolveAreaPlace(text, city){
     return {name, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], dist:haversine(city,{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}), custom:true};
   }catch(e){ return null; }
 }
+// Leidt buurten af uit de adresvelden van POI's (addr:suburb/quarter/city_district).
+// Lost gevallen op als Punda, dat in OSM niet als place-object bestaat maar wél in adressen.
+function harvestAddressAreas(pois, city){
+  const groups={};
+  (pois||[]).forEach(e=>{
+    const t=e.tags||{};
+    const nm=(t['addr:suburb']||t['addr:quarter']||t['addr:city_district']||t['addr:neighbourhood']||'').trim();
+    if(!nm) return;
+    const key=nm.toLowerCase();
+    if(key===(city.name||'').toLowerCase()) return;     // niet de stad zelf
+    if(e.lat==null||e.lon==null) return;
+    (groups[key]=groups[key]||{name:nm,lats:[],lons:[]});
+    groups[key].lats.push(e.lat); groups[key].lons.push(e.lon);
+  });
+  return Object.values(groups).map(g=>{
+    const lat=g.lats.reduce((s,v)=>s+v,0)/g.lats.length;   // zwaartepunt van de POI's
+    const lon=g.lons.reduce((s,v)=>s+v,0)/g.lons.length;
+    return {name:g.name, lat, lon, count:g.lats.length, dist:haversine(city,{lat,lon}), kind:'adres'};
+  }).filter(a=>a.count>=2);   // minstens 2 POI's → naam is betekenisvol, geen ruis
+}
+
 async function fetchAreas(city){
   const seen=new Set(); const out=[];
   const add=a=>{
@@ -254,6 +296,15 @@ async function fetchAreas(city){
     const dist=haversine(city,{lat:e.lat,lon:e.lon});
     if(dist<=20) add({name:nm, lat:e.lat, lon:e.lon, dist, kind:e.tags.place||catLabel(e)});
   }
+
+  // Punda-fix: buurten die niet als place-object bestaan, afleiden uit adresvelden van POI's.
+  try{
+    const tagged = await overpass(
+      ['nwr["addr:suburb"]','nwr["addr:quarter"]','nwr["addr:city_district"]'],
+      city.lat, city.lon, 6000, 300, 'area-addr');
+    harvestAddressAreas(tagged, city).forEach(a=>{ if(a.dist<=20) add(a); });
+  }catch(e){}
+
   out.sort((a,b)=>a.dist-b.dist || a.name.localeCompare(b.name,'nl'));
   return out.slice(0,35);
 }
@@ -453,7 +504,7 @@ function poiCard(e,tag,extra=''){
   const a=addr(t); const ad=a?`<div class="ad">${esc(a)}</div>`:`<div class="ad na">adres n.b.</div>`;
   const di=e._dist!=null?`<div class="oh">📍 ${distLabel(e._dist)}</div>`:'';
   return `<div class="poi">
-    <button class="fav-btn ${on?'on':''}" data-fav="${escAttr(id)}" data-poi="${serializePoi(e,tag)}" title="${on?'Verwijder favoriet':'Bewaar als favoriet'}" type="button">${on?'★':'☆'}</button>
+    <button class="fav-btn ${on?'on':''}" data-fav="${escAttr(id)}" data-poi="${serializePoi(e,tag)}" title="${on?'Verwijder uit deze trip':'Neem mee in deze trip'}" type="button">${on?'✓':'+'}</button>
     ${tag?`<div class="tag">${esc(tag)}</div>`:''}
     <div class="nm">${esc(t.name)}</div>
     ${ad}${oh}${di}${extra}
@@ -571,7 +622,7 @@ function sourceBadges(){
 /* ---------- main ---------- */
 async function generate(){
   const destText=$('dest').value.trim();
-  const depText=$('dep').value.trim();
+  const depText=state.startMode==='local' ? '' : $('dep').value.trim();
   const date=$('date').value;
   const time=$('time').value||'10:00';
   const mode=$('mode').value;
@@ -587,6 +638,8 @@ async function generate(){
   setStatus('Bestemming opzoeken…');
   let dest=state.dest|| await resolveCity(destText);
   let dep = depText ? (state.dep|| await resolveCity(depText)) : null;
+  const cleanDestText = dest ? displayPlaceName(dest,destText) : destText;
+  const cleanDepText = dep ? displayPlaceName(dep,depText) : depText;
   if(!dest){ setStatus(''); $('loading').classList.remove('on'); $('empty').style.display='block';
     alert('Bestemming niet gevonden — kies een suggestie uit de lijst of probeer een andere spelling.'); return; }
   if(!state.dest){ state.dest=dest; loadAreasFor(dest); }
@@ -636,25 +689,27 @@ async function generate(){
     // drinken: voorkeur (alcoholvrij/gezelschap) als tier, daarna nabijheid
     const drinkPref=x=> (state.noAlcohol?(x.tags.amenity==='cafe'?2:0):0) + companionScore(x,state.companions);
     drinks.sort((a,b)=> (drinkPref(b)-drinkPref(a)) || (a._dist-b._dist));
-    eats=eats.slice(0,9); drinks=drinks.slice(0,9);
+    /* v1.9.3: niet vooraf afkappen; renderlaag doet 'laad meer' */
   }
 
   // vervoer
   setStatus('Reisinformatie samenstellen…');
   let route=null, parking=[], charging=[], stops=[];
-  if((mode==='car'||mode==='ev')){
+  if(state.startMode!=='local' && (mode==='car'||mode==='ev')){
     if(dep) route=await osrmRoute(dep,anchor);
     parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,40,'parking')),anchor)
               .sort((a,b)=>a._dist-b._dist);   // dichtstbijzijnde eerst → fixt 'IKEA-parkeren'
     if(mode==='ev') charging=withDistance(dedupe(await overpass(['nwr["amenity"="charging_station"]'],anchor.lat,anchor.lon,R.charge,40,'charging')),anchor)
               .sort((a,b)=>a._dist-b._dist);
-  } else if(mode==='transit'){
+  } else if(state.startMode!=='local' && mode==='transit'){
     stops=withDistance(dedupe(await overpass(
       ['nwr["public_transport"="station"]','nwr["railway"="station"]','nwr["railway"="tram_stop"]','nwr["station"="subway"]'],
       anchor.lat,anchor.lon,R.transit,30,'transit')),anchor).sort((a,b)=>a._dist-b._dist);
   }
 
-  renderAll({dest:city,anchor,anchorName,tight,dep,destText,depText,date,time,mode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
+  routeUseSuggestions=false;
+  resetDisplayCounts();
+  renderAll({dest:city,anchor,anchorName,tight,dep,destText:cleanDestText,depText:cleanDepText,date,time,mode,startMode:state.startMode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
 
   $('loading').classList.remove('on');
   $('content').classList.add('on');
@@ -662,6 +717,55 @@ async function generate(){
 
 /* ---------- render ---------- */
 function stagger(){ document.querySelectorAll('#content .sec').forEach((s,i)=>{ s.style.animationDelay=(i*70)+'ms'; s.style.animation='none'; s.offsetHeight; s.style.animation=''; }); }
+
+
+function visibleItems(arr, key){
+  return (arr||[]).slice(0, displayCounts[key] || 9);
+}
+function moreButton(sectionKey, total){
+  const current=displayCounts[sectionKey]||9;
+  if(total<=current) return '';
+  return `<div class="more-row"><button class="btn" type="button" onclick="loadMore('${sectionKey}')">Laad meer (${Math.min(current+9,total)} van ${total})</button></div>`;
+}
+function loadMore(sectionKey){
+  displayCounts[sectionKey]=(displayCounts[sectionKey]||9)+9;
+  if(window.__dossier) renderAll(window.__dossier);
+}
+
+function selectedTripItems(){
+  const scoped = window.__dossier ? localFavoriteCandidates(window.__dossier).local : favorites;
+  return scoped || [];
+}
+function selectionSummaryHTML(d){
+  const scoped = localFavoriteCandidates(d).local;
+  const ignored = localFavoriteCandidates(d).remote;
+  const selected = scoped.map((f,i)=>`<span class="chip on" style="cursor:default">✓ ${esc(f.name)}</span>`).join(' ');
+  const ignoredNote = ignored.length ? `<div class="na" style="margin-top:6px">Genegeerd buiten dit focusgebied: ${ignored.slice(0,4).map(f=>esc(f.name)).join(' · ')}${ignored.length>4?' …':''}</div>` : '';
+  return `<div class="note" style="margin:0 0 11px"><b>Maak je eigen route:</b> tik op <b>+</b> bij plekken die je wilt meenemen. De route gebruikt standaard alleen jouw selectie.${scoped.length?`<div class="chips" style="margin-top:8px">${selected}</div>`:'<div class="na" style="margin-top:6px">Nog niets gekozen voor deze trip.</div>'}${ignoredNote}</div>`;
+}
+function useSuggestedRoute(){
+  routeUseSuggestions=true;
+  if(window.__dossier) renderAll(window.__dossier);
+}
+function useSelectionRoute(){
+  routeUseSuggestions=false;
+  if(window.__dossier) renderAll(window.__dossier);
+}
+
+function focusHarvestedArea(i){
+  const a=(window.__harvestedAreas||[])[i];
+  if(!a) return;
+  state.area={name:a.name, lat:a.lat, lon:a.lon, dist:a.dist, custom:true};
+  // dropdown/handmatig veld in lijn brengen voor de duidelijkheid
+  const sel=$('area'); if(sel) sel.value='';
+  const inp=$('area-custom'); if(inp) inp.value=a.name;
+  const h=$('area-hint'); if(h) h.textContent=`Focus op ${a.name} (afgeleid uit adresdata).`;
+  $('go').scrollIntoView({behavior:'smooth',block:'center'});
+  generate();
+}
+function resetDisplayCounts(){
+  displayCounts={ attractions:9, eats:9, drinks:9 };
+}
 
 function renderAll(d){
   // weather
@@ -687,14 +791,25 @@ function renderAll(d){
   sec('sec-weather','Weer','①',wHTML,'');
 
   // do
+  // buurt-suggesties afgeleid uit de opgehaalde POI's — alleen tonen als nog geen buurt gekozen
+  let areaSuggest='';
+  if(!d.tight){
+    const harvested = harvestAddressAreas([...(d.attractions||[]), ...(d.eats||[]), ...(d.drinks||[])], d.dest)
+      .sort((a,b)=> b.count-a.count || a.dist-b.dist).slice(0,6);
+    if(harvested.length){
+      window.__harvestedAreas = harvested;
+      const chips = harvested.map((a,i)=>`<button class="chip" type="button" onclick="focusHarvestedArea(${i})">${esc(a.name)} · ${a.count}×</button>`).join(' ');
+      areaSuggest = `<div class="na" style="margin:2px 0 6px">Buurten in de resultaten — klik om hierop te focussen: </div><div class="chips" style="margin-bottom:10px">${chips}</div>`;
+    }
+  }
   const areaCaption = `<div class="na" style="margin-bottom:8px">Zoekgebied: <b>${esc(d.anchorName)}</b>${d.tight?' · gekozen buurt, kleinere straal':''}</div>`;
-  const doHTML = areaCaption + (d.attractions.length
-    ? sourceBadges()+`<div class="grid">${d.attractions.slice(0,9).map(e=>poiCard(e,catLabel(e))).join('')}</div>`
+  const doHTML = areaCaption + areaSuggest + (d.attractions.length
+    ? sourceBadges()+`<div class="grid">${visibleItems(d.attractions,'attractions').map(e=>poiCard(e,catLabel(e))).join('')}</div>${moreButton('attractions',d.attractions.length)}`
     : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad, een andere buurt of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`);
-  sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(9,d.attractions.length)} plekken`:'');
+  sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(displayCounts.attractions,d.attractions.length)} van ${d.attractions.length} plekken`:'');
 
   // hidden gems — sluit de al getoonde 9 uit
-  const shownIds = new Set(d.attractions.slice(0,9).map(favId));
+  const shownIds = new Set(visibleItems(d.attractions,'attractions').map(favId));
   const gems = hiddenGems(d.attractions, shownIds);
   if(gems.length){
     sec('sec-gems','Niet iedereen kent deze','②b',`<div class="grid">${gems.map(e=>poiCard(e,catLabel(e))).join('')}</div>`,`${gems.length} tips`);
@@ -703,23 +818,28 @@ function renderAll(d){
   // eat
   if(state.eat){
     const eatHTML = d.eats.length
-      ? `<div class="grid">${d.eats.map(e=>poiCard(e,(e.tags.cuisine||'eten').split(';')[0],priceTag(e))).join('')}</div>`
+      ? `<div class="grid">${visibleItems(d.eats,'eats').map(e=>poiCard(e,(e.tags.cuisine||'eten').split(';')[0],priceTag(e))).join('')}</div>${moreButton('eats',d.eats.length)}`
       : `<div class="note">Geen eetgelegenheden gevonden bij deze keuze${state.cuisines.size?' / keuken':''}. Probeer een andere keuken of vink er meer aan.</div>`;
-    sec('sec-eat','Eten','③',eatHTML, d.eats.length?`${d.eats.length}`:'');
+    sec('sec-eat','Eten','③',eatHTML, d.eats.length?`${Math.min(displayCounts.eats,d.eats.length)} van ${d.eats.length}`:'');
   } else clearSec('sec-eat');
 
   // drink
   if(state.drink){
     const note=state.noAlcohol?`<div class="note" style="margin-bottom:11px">Alcoholvrij gekozen — koffiebars en cafés staan vooraan. OSM markeert mocktailbars niet apart, dus kies gerust op naam.</div>`:'';
     const drHTML = d.drinks.length
-      ? note+`<div class="grid">${d.drinks.map(e=>poiCard(e,e.tags.amenity)).join('')}</div>`
+      ? note+`<div class="grid">${visibleItems(d.drinks,'drinks').map(e=>poiCard(e,e.tags.amenity)).join('')}</div>${moreButton('drinks',d.drinks.length)}`
       : `<div class="note">Geen drinkgelegenheden gevonden in de buurt.</div>`;
-    sec('sec-drink','Drinken','④',drHTML, d.drinks.length?`${d.drinks.length}`:'');
+    sec('sec-drink','Drinken','④',drHTML, d.drinks.length?`${Math.min(displayCounts.drinks,d.drinks.length)} van ${d.drinks.length}`:'');
   } else clearSec('sec-drink');
 
   // travel
-  sec('sec-travel', travelTitle(d.mode),'⑤', travelHTML(d), '');
-  sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
+  if(d.startMode==='local'){
+    sec('sec-travel','Startpunt','⑤', localStartHTML(d), 'lokaal');
+    clearSec('sec-disruptions');
+  } else {
+    sec('sec-travel', travelTitle(d.mode),'⑤', travelHTML(d), '');
+    sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
+  }
 
   // route
   const routePlan=buildRoutePlan(d);
@@ -766,7 +886,7 @@ function roadRefs(d){
   return (d.route?.roads||[]).filter(Boolean).slice(0,10);
 }
 function googleTrafficLink(d){
-  const o=d.dep?`${d.dep.lat},${d.dep.lon}`:'';
+  const o=(d.startMode==='local') ? '' : (d.dep?`${d.dep.lat},${d.dep.lon}`:'');
   const tgt=d.anchor||d.dest;
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${tgt.lat},${tgt.lon}&travelmode=driving`;
 }
@@ -851,6 +971,11 @@ function disruptionsHTML(d){
 }
 
 
+
+function localStartHTML(d){
+  return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en maak een logische route rond <b>${esc(d.anchorName||d.destText)}</b>.</div>`;
+}
+
 function travelTitle(m){return {car:'Reisadvies — auto',ev:'Reisadvies — EV',transit:'Reisadvies — OV',bike:'Reisadvies — fiets',foot:'Reisadvies — te voet'}[m];}
 
 function travelHTML(d){
@@ -912,7 +1037,7 @@ function travelHTML(d){
   return `<div class="travel-grid">${cards}</div>${mapCap}<div id="map"></div>`;
 }
 function transitDeeplink(d){
-  const o=d.dep?`${d.dep.lat},${d.dep.lon}`:'';
+  const o=(d.startMode==='local') ? '' : (d.dep?`${d.dep.lat},${d.dep.lon}`:'');
   const tgt=d.anchor||d.dest;
   const dd=`${tgt.lat},${tgt.lon}`;
   const tm={car:'driving',ev:'driving',transit:'transit',bike:'bicycling',foot:'walking'}[d.mode];
@@ -955,7 +1080,7 @@ function currentAnchorForRoute(d){
 }
 function localFavoriteCandidates(d){
   const anchor=currentAnchorForRoute(d);
-  const favs=favorites.map(f=>normalizeRoutePoint(f,'favoriet')).filter(Boolean);
+  const favs=favorites.map(f=>normalizeRoutePoint(f,'tripselectie')).filter(Boolean);
   if(!anchor || !favs.length) return {local:favs, remote:[]};
   const local=[], remote=[];
   favs.forEach(f=>{
@@ -978,6 +1103,7 @@ function routeCandidates(d){
     };
   }
   if(scoped.local.length) return uniqueRoutePoints(scoped.local).slice(0,8);
+  if(!routeUseSuggestions) return [];
 
   const picks=[];
   (d.attractions||[]).slice(0,4).forEach(e=>picks.push(normalizeRoutePoint(e,'bezienswaardigheid')));
@@ -986,6 +1112,7 @@ function routeCandidates(d){
   return uniqueRoutePoints(picks).slice(0,7);
 }
 function routeStartPoint(d){
+  if(d.startMode==='local') return {name:d.anchorName||d.destText, tag:'start/focusgebied', lat:d.anchor.lat, lon:d.anchor.lon, address:''};
   if((d.mode==='car'||d.mode==='ev') && d.parking?.[0]) return normalizeRoutePoint(d.parking[0],'start/parkeren');
   if(d.mode==='transit' && d.stops?.[0]) return normalizeRoutePoint(d.stops[0],'start/OV');
   if(d.dep) return {name:d.depText||'Vertrekpunt', tag:'start', lat:d.dep.lat, lon:d.dep.lon, address:''};
@@ -1019,7 +1146,7 @@ function buildRoutePlan(d){
     const km=pointDistance(points[i],points[i+1]);
     if(km!=null){ total+=km; hops.push(km); } else hops.push(null);
   }
-  return {start, stops:ordered, points, hops, totalKm:total, usesFavorites:ordered.some(p=>p.role==='favoriet'), favoriteWarning:routeFavoriteWarning};
+  return {start, stops:ordered, points, hops, totalKm:total, usesFavorites:ordered.some(p=>p.role==='tripselectie'), favoriteWarning:routeFavoriteWarning, usesSuggestions:routeUseSuggestions};
 }
 function routeMapsLink(routePlan,d){
   const pts=routePlan.points||[];
@@ -1031,19 +1158,35 @@ function routeMapsLink(routePlan,d){
   return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=${mode}${waypoints?`&waypoints=${encodeURIComponent(waypoints)}`:''}`;
 }
 function routeHTML(routePlan,d){
+  const pre = selectionSummaryHTML(d);
+
   if(!routePlan.points.length || routePlan.points.length<2){
-    return `<div class="note">Kies een paar favorieten met ☆ of gebruik de voorgestelde bezienswaardigheden. Daarna kan Reiskompas een logische volgorde voorstellen.</div>`;
+    const scoped = localFavoriteCandidates(d);
+    const allRemote = scoped.local.length===0 && scoped.remote.length>0;  // wél gekozen, maar alles buiten focus
+    let msg, action;
+    if(allRemote){
+      msg = `Je gekozen plek(ken) liggen allemaal meer dan ${MAX_ROUTE_FAVORITE_DISTANCE_KM} km buiten dit focusgebied, dus er is geen logische route binnen ${esc(d.anchorName||d.destText)}. Kies plekken dichterbij, of verruim je focusgebied.`;
+      action = `<button class="btn" type="button" onclick="useSuggestedRoute()">Gebruik suggesties voor dit gebied</button>`;
+    } else if(routeUseSuggestions){
+      msg = `Geen geschikte suggesties gevonden om een route van te maken. Kies zelf een paar plekken met <b>+</b>.`;
+      action = `<button class="btn" type="button" onclick="useSelectionRoute()">Terug naar alleen mijn selectie</button>`;
+    } else {
+      msg = `Kies een paar plekken met <b>+</b> om een route te maken.`;
+      action = `<button class="btn" type="button" onclick="useSuggestedRoute()">Gebruik suggesties toch</button>`;
+    }
+    return `${pre}<div class="note">${msg}<div class="actions" style="margin-top:10px">${action}</div></div>`;
   }
+
   const modeLabel=(d.mode==='car'||d.mode==='ev')?'route':'looproute';
   const intro=routePlan.usesFavorites
-    ? 'Gebaseerd op je favorieten.'
-    : 'Gebaseerd op de hoogst gerankte plekken omdat er nog geen favorieten zijn gekozen.';
+    ? 'Gebaseerd op jouw gekozen plekken voor deze trip.'
+    : 'Gebaseerd op suggesties omdat je daarvoor hebt gekozen.';
   const warnings=[];
   if(routePlan.favoriteWarning?.ignored){
-    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ ${routePlan.favoriteWarning.ignored} opgeslagen favoriet(en) liggen meer dan ${routePlan.favoriteWarning.maxKm} km buiten dit focusgebied en zijn voor deze route genegeerd.${routePlan.favoriteWarning.names?.length?`<br><span class="na">Genegeerd: ${routePlan.favoriteWarning.names.map(esc).join(' · ')}</span>`:''}</div>`);
+    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ ${routePlan.favoriteWarning.ignored} gekozen plek(ken) liggen meer dan ${routePlan.favoriteWarning.maxKm} km buiten dit focusgebied en zijn voor deze route genegeerd.${routePlan.favoriteWarning.names?.length?`<br><span class="na">Genegeerd: ${routePlan.favoriteWarning.names.map(esc).join(' · ')}</span>`:''}</div>`);
   }
   if(routePlan.totalKm > ROUTE_TOTAL_WARNING_KM){
-    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ Deze route is indicatief ${distLabel(routePlan.totalKm)}. Dat is waarschijnlijk te lang als stadswandeling. Kies minder favorieten of beperk het focusgebied.</div>`);
+    warnings.push(`<div class="note" style="margin-bottom:10px">⚠️ Deze route is indicatief ${distLabel(routePlan.totalKm)}. Dat is waarschijnlijk te lang als stadswandeling. Kies minder plekken of beperk het focusgebied.</div>`);
   }
   const rows=routePlan.points.map((p,i)=>{
     const hop = i<routePlan.hops.length && routePlan.hops[i]!=null
@@ -1054,10 +1197,11 @@ function routeHTML(routePlan,d){
       <div class="meta">${esc(p.tag||'plek')}${p.address?` · ${esc(p.address)}`:''}</div></div>
     </div>${hop}`;
   }).join('');
-  return `${warnings.join('')}<div class="note route-summary"><b>Geen strak tijdschema.</b> Dit is een praktische ${modeLabel}: ${intro} Totale indicatieve afstand: <b>${distLabel(routePlan.totalKm)}</b>.</div>
+  return `${pre}${warnings.join('')}<div class="note route-summary"><b>Geen strak tijdschema.</b> Dit is een praktische ${modeLabel}: ${intro} Totale indicatieve afstand: <b>${distLabel(routePlan.totalKm)}</b>.</div>
     <div class="route-list">${rows}</div>
     <div class="actions" style="margin-top:12px">
       <a class="btn solid" target="_blank" rel="noopener" href="${routeMapsLink(routePlan,d)}">🗺️ Open route in Maps</a>
+      ${routePlan.usesSuggestions?`<button class="btn" type="button" onclick="useSelectionRoute()">Gebruik alleen mijn selectie</button>`:''}
       <button class="btn" onclick="window.print()" type="button">🖨️ Print reisdossier</button>
       <button class="btn" onclick="scrollToAIPrompt()" type="button">✨ AI-adviesprompt</button>
     </div>
@@ -1083,7 +1227,7 @@ function buildAIPrompt(d, routePlan){
   const weather=d.weather ? `${d.weather.max}°/${d.weather.min}°, ${wlabel(d.weather.code)[0]}, ${d.weather.precip!=null ? (d.weather.kind==='fc'?'neerslagkans ':'natte dagen ~')+d.weather.precip+'%' : 'neerslag onbekend'}` : 'geen weerdata';
   const area=d.anchorName || d.destText;
   const routeTxt=(routePlan?.points||[]).map((p,i)=>`- ${i+1}. ${p.name}${p.tag?' ('+p.tag+')':''}${p.address?' — '+p.address:''}`).join('\n');
-  const favTxt=favorites.length ? favorites.slice(0,10).map((f,i)=>`${i+1}. ${f.name}`).join('\n') : 'Geen favorieten geselecteerd.';
+  const favTxt=favorites.length ? favorites.slice(0,10).map((f,i)=>`${i+1}. ${f.name}`).join('\n') : 'Geen tripselecties geselecteerd.';
   return `Ik gebruik een kleine open-data reisplanner (“Reiskompas”) en wil graag dat je als praktische reisadviseur meekijkt.
 
 Bestemming:
@@ -1092,7 +1236,8 @@ Bestemming:
 - Datum: ${d.date}
 - Aankomsttijd: ${d.time}
 - Vervoer: ${travelTitle(d.mode).replace('Reisadvies — ','')}
-- Vertrekplaats: ${d.depText || 'niet opgegeven'}
+- Startmodus: ${d.startMode==='local'?'ik ben al in de buurt':'ik reis erheen'}
+- Vertrekplaats: ${d.startMode==='local'?'niet nodig':(d.depText || 'niet opgegeven')}
 
 Gezelschap:
 - Reisgezelschap: ${companions}
@@ -1119,11 +1264,11 @@ ${summarizePois(d.eats,8) || 'Geen eetresultaten of eten niet geselecteerd.'}
 Drinken:
 ${summarizePois(d.drinks,8) || 'Geen drinkresultaten of drinken niet geselecteerd.'}
 
-Favorieten:
+Gekozen voor deze trip:
 ${favTxt}
 
 Logische routevolgorde uit Reiskompas:
-${routeTxt || 'Nog geen routevolgorde beschikbaar.'}
+${routeTxt || 'Nog geen routevolgorde beschikbaar; gebruiker heeft mogelijk nog geen plekken gekozen.'}
 
 Maak hiervan een praktisch, menselijk routeadvies zonder strak tijdschema. Controleer in je advies ook expliciet mogelijke wegwerkzaamheden, spoorstoringen, evenementen of andere bereikbaarheidshinder voor deze datum/route, en zeg waar ik dat vlak voor vertrek moet verifiëren. 
 Houd rekening met:
@@ -1250,7 +1395,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   const t=new Date(); t.setDate(t.getDate()+1);
   $('date').value=t.toISOString().split('T')[0];
   $('go').addEventListener('click',generate);
-  // favorieten via event-delegation — werkt ook voor namen met een apostrof (O'Briens, L'Escale)
+  // tripselecties via event-delegation — werkt ook voor namen met een apostrof (O'Briens, L'Escale)
   document.addEventListener('click',ev=>{
     const btn = ev.target.closest && ev.target.closest('.fav-btn');
     if(btn){ ev.preventDefault(); toggleFavorite(btn); }

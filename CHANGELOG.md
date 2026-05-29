@@ -1,5 +1,61 @@
 # Changelog
 
+## v1.9.7
+
+- Startmodus toegevoegd: **Ik reis erheen** versus **Ik ben al in de buurt**.
+- Vertrekplaats wordt uitgeschakeld wanneer de gebruiker al in de buurt is.
+- Reisadvies en verstoringen vanaf vertrekplaats worden in lokale modus overgeslagen.
+- Routevoorstel start in lokale modus vanaf het gekozen focusgebied.
+- AI-prompt uitgebreid met startmodus.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.7.
+
+## v1.9.6
+
+Route-leegtoestand & terugschakelen (polish).
+
+- **Heldere leegtoestand met altijd een uitweg.** De route-sectie legt nu uit *waarom* er geen route is en biedt in elk geval één knop:
+  - niets gekozen → "Gebruik suggesties toch";
+  - alle gekozen plekken buiten het focusgebied → uitleg + "Gebruik suggesties voor dit gebied";
+  - suggesties aan maar geen resultaat → "Terug naar alleen mijn selectie".
+  Lost het stille "er gebeurt niets" op wanneer je selectie effectief leeg was.
+- **Terugschakelen rondgemaakt.** "Gebruik alleen mijn selectie" verschijnt nu consequent zodra een route op suggesties draait, naast de bestaande "Gebruik suggesties toch".
+- Dode `hasSelection`-variabele verwijderd; `localFavoriteCandidates` wordt in de leegtoestand nog maar één keer berekend.
+- Versie en service-worker-cache naar v1.9.6.
+
+## v1.9.5
+
+Selectie & route polish.
+
+- Route gebruikt standaard alleen actuele tripselecties.
+- Automatische route uit suggesties gebeurt alleen nog na expliciete keuze via **Gebruik suggesties toch**.
+- `+` / `✓`-knoppen maken duidelijker dat het om **deze trip** gaat.
+- Route-sectie toont geselecteerde plekken bovenaan.
+- Route-sectie meldt lokaal genegeerde selecties buiten het focusgebied.
+- AI-prompt blijft gebaseerd op actuele, lokaal relevante selectie.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.5.
+
+## v1.9.4
+
+Buurtdetectie uit adresdata (Punda-fix).
+
+- **Buurten afgeleid uit adresvelden.** Naast `place`-objecten leidt Reiskompas focusgebieden nu ook af uit `addr:suburb`/`addr:quarter`/`addr:city_district` van de opgehaalde POI's. Dit lost gevallen op als **Punda**, dat in OpenStreetMap niet als zelfstandig `place`-object bestaat maar wél in de adresdata zit. Werkt brononafhankelijk, dus ook voor Pietermaai, Scharloo, en wijken in Orlando/Utrecht.
+- Een buurt wordt pas aangeboden bij minstens 2 POI's met dezelfde buurtnaam (ruisfilter); het ankerpunt is het zwaartepunt van die POI's.
+- **Klikbare buurt-suggesties.** Onder "Zien & doen" verschijnen de in de resultaten gevonden buurten als chips ("Punda · 3×"); één klik herfocust de zoekopdracht op die buurt met kleinere straal.
+- Verkeerd meervoud "tripselectieen" overal gecorrigeerd naar "tripselecties".
+- Versie en service-worker-cache naar v1.9.4.
+
+## v1.9.3
+
+Rapid prototype bugfix/UX-release.
+
+- Permanente favorieten omgebouwd naar sessiegebonden **Interessant voor deze trip**.
+- Oude favorieten uit eerdere bestemmingen worden niet meer gemigreerd of opgeslagen.
+- AI-prompt gebruikt alleen actuele, lokaal relevante tripselecties.
+- Curaçao/CW-labeling verbeterd zodat Willemstad/Jan Thiel als Curaçao worden weergegeven i.p.v. Netherlands.
+- Resultaten worden niet meer te vroeg afgeknipt; renderlaag gebruikt nu 'Laad meer'.
+- 'Laad meer'-knoppen toegevoegd voor bezienswaardigheden, eten en drinken.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.3.
+
 ## v1.9.2
 
 Bugfix-release voor routefavorieten.
