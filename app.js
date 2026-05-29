@@ -8,7 +8,7 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.9.7';
+const APP_VERSION = '1.9.8';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -63,10 +63,20 @@ function displayCountry(country, cc=''){
   if(/curacao|curaçao/i.test(raw)) return 'Curaçao';
   return raw || '';
 }
+
+function isCuracaoCoords(lat, lon){
+  lat=Number(lat); lon=Number(lon);
+  return isFinite(lat)&&isFinite(lon) && lat>11.7 && lat<12.5 && lon>-69.5 && lon<-68.5;
+}
+function normalizeCountry(country, cc='', lat=null, lon=null){
+  if(isCuracaoCoords(lat,lon)) return 'Curaçao';
+  return displayCountry(country, cc);
+}
+
 function displayPlaceName(place, fallback=''){
   if(!place) return fallback;
   const name=place.name || fallback || '';
-  const country=displayCountry(place.country, place.cc);
+  const country=normalizeCountry(place.country, place.cc, place.lat, place.lon);
   if(!country) return name;
   return `${name}, ${country}`;
 }
@@ -174,6 +184,36 @@ function applyStartModeUI(){
 
 
 /* ---------- geocoding ---------- */
+
+function formatPlaceInput(place, fallback=''){
+  if(!place) return fallback;
+  return displayPlaceName(place, fallback || place.name || '');
+}
+async function resolveTypedInput(key, opts={}){
+  const inputId = key==='dest' ? 'dest' : 'dep';
+  const inp=$(inputId);
+  if(!inp) return null;
+  const txt=inp.value.trim();
+  if(txt.length<2) return null;
+  if(state[key]) return state[key];
+
+  const place = await resolveCity(txt);
+  if(!place) return null;
+  state[key]=place;
+  inp.value=formatPlaceInput(place, txt);
+
+  if(key==='dest'){
+    resetAreaField();
+    loadAreasFor(place);
+  }
+  return place;
+}
+function scheduleTypedResolve(key, delay=650){
+  const timerKey = key==='dest' ? '_destResolveTimer' : '_depResolveTimer';
+  clearTimeout(state[timerKey]);
+  state[timerKey]=setTimeout(()=>resolveTypedInput(key).catch(()=>{}), delay);
+}
+
 function setupAutocomplete(inputId,listId,key){
   const inp=$(inputId), list=$(listId);
   let timer=null;
@@ -183,6 +223,7 @@ function setupAutocomplete(inputId,listId,key){
     const q=inp.value.trim();
     clearTimeout(timer);
     if(q.length<2){ list.classList.remove('open'); return; }
+    if(key==='dest' || key==='dep') scheduleTypedResolve(key);
     timer=setTimeout(async()=>{
       try{
         const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lang=en`);
@@ -191,14 +232,15 @@ function setupAutocomplete(inputId,listId,key){
         (d.features||[]).forEach(f=>{
           const p=f.properties||{};
           const city=p.name||p.city||'';
-          const ctx=[p.state,displayCountry(p.country,p.countrycode)].filter(Boolean).join(', ');
+          const shownCountry=normalizeCountry(p.country,p.countrycode,f.geometry.coordinates[1],f.geometry.coordinates[0]);
+          const ctx=[p.state,shownCountry].filter(Boolean).join(', ');
           const it=document.createElement('div');
           it.className='ac-item';
           it.innerHTML=`${city}<small>${ctx}</small>`;
           it.onclick=()=>{
-            inp.value=city + (displayCountry(p.country,p.countrycode)?`, ${displayCountry(p.country,p.countrycode)}`:'');
+            inp.value=city + (shownCountry?`, ${shownCountry}`:'');
             state[key]={lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],
-                        name:city,country:displayCountry(p.country,p.countrycode),cc:(p.countrycode||'').toLowerCase()};
+                        name:city,country:shownCountry,cc:(p.countrycode||'').toLowerCase()};
             list.classList.remove('open');
             if(key==='dest') loadAreasFor(state.dest);
           };
@@ -207,6 +249,14 @@ function setupAutocomplete(inputId,listId,key){
         list.classList.toggle('open',(d.features||[]).length>0);
       }catch(e){ list.classList.remove('open'); }
     },260);
+  });
+  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveTypedInput(key).catch(()=>{}), 120); });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      resolveTypedInput(key).catch(()=>{});
+      list.classList.remove('open');
+    }
   });
   document.addEventListener('click',e=>{ if(!inp.contains(e.target)&&!list.contains(e.target)) list.classList.remove('open'); });
 }
@@ -219,7 +269,7 @@ async function resolveCity(text){
     if(!d.length) return null;
     const p=d[0];
     return {lat:+p.lat,lon:+p.lon,name:(p.display_name||text).split(',')[0],
-            country:displayCountry(p.address?.country,p.address?.country_code),cc:(p.address?.country_code||'').toLowerCase()};
+            country:normalizeCountry(p.address?.country,p.address?.country_code,+p.lat,+p.lon),cc:(p.address?.country_code||'').toLowerCase()};
   }catch(e){ return null; }
 }
 
@@ -363,6 +413,14 @@ function setupAreaCustom(){
         list.classList.toggle('open',(d.features||[]).length>0);
       }catch(e){ list.classList.remove('open'); }
     },260);
+  });
+  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveTypedInput(key).catch(()=>{}), 120); });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      resolveTypedInput(key).catch(()=>{});
+      list.classList.remove('open');
+    }
   });
   document.addEventListener('click',e=>{ if(!inp.contains(e.target)&&!list.contains(e.target)) list.classList.remove('open'); });
 }
@@ -643,6 +701,7 @@ async function generate(){
   if(!dest){ setStatus(''); $('loading').classList.remove('on'); $('empty').style.display='block';
     alert('Bestemming niet gevonden — kies een suggestie uit de lijst of probeer een andere spelling.'); return; }
   if(!state.dest){ state.dest=dest; loadAreasFor(dest); }
+  if(dep && !state.dep) state.dep=dep;
 
   const city = dest;                                 // stadcentrum (weer + route-doel als geen buurt)
   const anchor = state.area ? state.area : city;     // waar we omheen zoeken

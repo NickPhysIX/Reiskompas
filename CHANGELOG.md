@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.8
+
+Bugfix-release voor bestemmingsinvoer.
+
+- Getypte bestemmingen zoals `Delft` worden nu automatisch resolved zonder verplichte autocomplete-keuze.
+- Auto-resolve toegevoegd na korte pauze, bij Enter en bij verlaten van het veld.
+- Buurt-/focusdropdown wordt automatisch geladen zodra de bestemming is herkend.
+- Vertrekplaats gebruikt dezelfde fallback-resolutie.
+- Curaçao-labeling robuuster gemaakt met coördinatenherkenning, zodat Willemstad/Jan Thiel niet als Europees Nederland worden weergegeven.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.8.
+
 ## v1.9.7
 
 - Startmodus toegevoegd: **Ik reis erheen** versus **Ik ben al in de buurt**.

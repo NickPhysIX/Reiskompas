@@ -1,4 +1,4 @@
-# Reiskompas v1.9.7
+# Reiskompas v1.9.8
 
 Reiskompas is een kleine, client-side PWA voor het voorbereiden van een stadsbezoek met openbare bronnen.
 
@@ -57,20 +57,20 @@ Daarna maakt Reiskompas een praktisch reisdossier met:
 - AI-promptgenerator zonder API-koppeling.
 - PWA-installatie met manifest en service worker.
 
-## v1.9.7
+## v1.9.8
 
-Housekeeping-release op basis van v1.9.7.
+Housekeeping-release op basis van v1.9.8.
 
 - README opgeschoond.
 - Verouderde documentatie over oude agenda-export verwijderd.
 - Terminologie gelijkgetrokken met de huidige functie: logische routevoorstellen.
-- Versies en metadata bijgewerkt naar v1.9.7.
+- Versies en metadata bijgewerkt naar v1.9.8.
 - Service-worker cache gebumpt.
 
 Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
 
 
-## v1.9.7
+## v1.9.8
 
 - Routefavorieten worden nu gefilterd op afstand tot het huidige focusgebied.
 - Favorieten verder dan 3 km worden genegeerd voor de route.
@@ -78,7 +78,7 @@ Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
 - Sanity-warning toegevoegd voor routes langer dan 5 km.
 
 
-## v1.9.7
+## v1.9.8
 
 - Permanente favorieten vervangen door sessiegebonden **Interessant voor deze trip**.
 - Tripselecties worden niet meer opgeslagen in localStorage en vervuilen geen volgende bestemming.
@@ -87,7 +87,7 @@ Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
 - 'Laad meer'-knoppen toegevoegd voor bezienswaardigheden, eten en drinken.
 
 
-## v1.9.7
+## v1.9.8
 
 - Selectie & route polish.
 - Route gebruikt standaard alleen plekken die met `+` zijn gekozen voor deze trip.
@@ -96,10 +96,19 @@ Zie `CHANGELOG.md` voor de volledige ontwikkelgeschiedenis.
 - Route-sectie toont nu een overzicht van gekozen plekken en genegeerde plekken buiten het focusgebied.
 
 
-## v1.9.7
+## v1.9.8
 
 - Startmodus toegevoegd: **Ik reis erheen** / **Ik ben al in de buurt**.
 - In lokale modus is vertrekplaats niet meer nodig.
 - In lokale modus worden reisadvies en verstoringen vanaf vertrekplaats overgeslagen.
 - Logische route start dan vanaf het focusgebied/buurtanker.
 - AI-prompt vermeldt de startmodus.
+
+
+## v1.9.8
+
+- Bugfix: getypte bestemmingen worden nu automatisch herkend zonder dat je verplicht een autocomplete-suggestie hoeft aan te tikken.
+- Bestemming wordt opgelost op korte pauze, Enter en blur.
+- Buurt-/gebiedslijst laadt daarna automatisch.
+- Vertrekplaats krijgt dezelfde robuustere fallback.
+- Curaçao-labeling extra robuust gemaakt met coördinatenherkenning.
