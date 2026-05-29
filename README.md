@@ -1,4 +1,4 @@
-# Reiskompas v1.4.1
+# Reiskompas v1.7
 
 Client-side HTML/PWA voor het voorbereiden van een stadsbezoek met openbare bronnen. Geen API-keys, geen backend — werkt op GitHub Pages en als web-app op iOS.
 
@@ -24,7 +24,7 @@ Client-side HTML/PWA voor het voorbereiden van een stadsbezoek met openbare bron
 - `icon-180.png`, `icon-192.png`, `icon-512.png` — app-iconen.
 - `README.md`, `CHANGELOG.md`, `QA_CHECK.md`
 
-## v1.4.1 in het kort
+## v1.7 in het kort
 
 Review-fix release: apostrof-bug in de favorietknop, gelijkgetrokken versiestrings, reisgezelschap dat nu echt meeweegt, herstelde hidden-gems-logica, ge-de-versioneerde favorieten, Leaflet offline-cache en aparte debounce per adresveld. Zie `CHANGELOG.md`.
 
@@ -35,3 +35,29 @@ Upload alle bestanden samen naar dezelfde map (bijv. een GitHub Pages-repo). Ope
 ## Bekende grenzen (bewust)
 
 Prijzen (parkeren/brandstof), live verkeersdrukte en exacte OV-tijden zitten niet in gratis open bronnen; daarvoor staan doorkliks naar de officiële planners. OSM-dekking varieert per regio — grote steden zijn rijk gevuld, kleine plaatsen mager.
+
+## v1.7
+
+Samengevoegde buurtfocus: Claude's kleinere zoekstralen en afstandssortering, plus handmatige focusinvoer via Photon voor plekken zoals Punda, Binnenstad of Centrum.
+
+## v1.7
+
+- Optionele AI-promptgenerator toegevoegd.
+- Geen API-key, geen backend en geen directe AI-integratie.
+- Kopieerknop en links naar Gemini, ChatGPT en Claude.
+- De prompt bevat bestemming, focusgebied, gezelschap, interesses, weer, POI’s, eten/drinken, favorieten en planning.
+
+
+## v1.7
+- AI-sectie vereenvoudigd.
+- Gemini en ChatGPT als primaire opties.
+- Claude/Grok verwijderd uit standaardinterface.
+
+
+## v1.7
+
+- Nieuwe sectie **Bereikbaarheid & verstoringen** toegevoegd.
+- Dagplanning is ingeklapt en minder prominent.
+- Voor auto/EV: routewegen, verkeerschecklinks, Rijkswaterstaat/van A naar Beter voor Nederland.
+- Voor OV/spoor: 9292/NS checklinks voor Nederland.
+- AI-prompt uitgebreid met bereikbaarheid, wegwerkzaamheden, spoorstoringen en events.

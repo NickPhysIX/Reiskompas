@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v1.5.0 — klaar voor je citytrip</title>
-<meta name="description" content="Reiskompas v1.5.0: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
+<title>Reiskompas v1.7 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v1.7: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -274,6 +274,34 @@ input[type=time]::-webkit-calendar-picker-indicator{
 .colophon b{color:var(--ink-soft);}
 .regen{margin-top:10px;}
 
+.checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;}
+.check-card{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:15px 16px;}
+.check-card h4{margin:0 0 8px;font-size:13px;letter-spacing:.04em;color:var(--ink-soft);display:flex;align-items:center;gap:7px;font-weight:600;}
+.check-card ul{margin:8px 0 0 18px;padding:0;color:var(--ink-soft);font-size:13px;line-height:1.45;}
+.check-card li{margin:4px 0;}
+.disruption-note{margin-top:10px;}
+details.plan-details{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:0;overflow:hidden;}
+details.plan-details summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:700;color:var(--ink);}
+details.plan-details summary::-webkit-details-marker{display:none;}
+details.plan-details summary:after{content:"▾";float:right;color:var(--ink-soft);}
+details.plan-details[open] summary:after{content:"▴";}
+details.plan-details .timeline{margin:0 16px 8px 24px;}
+details.plan-details .actions{padding:0 16px 14px;}
+
+
+.ai-box{
+  background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:15px 16px;
+}
+.ai-box textarea{
+  width:100%;min-height:210px;margin-top:10px;padding:11px 12px;border:1.5px solid var(--line-strong);
+  border-radius:10px;background:var(--paper);color:var(--ink);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  resize:vertical;outline:none;
+}
+.ai-box textarea:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,74,38,.16);}
+.ai-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.ai-small{font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin-top:7px;}
+
+
 /* ---------- UI polish ---------- */
 .version-badge{
   display:inline-block;margin-left:8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
@@ -308,7 +336,7 @@ input[type=time]::-webkit-calendar-picker-indicator{
   padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;
 }
 @media print{
-  .form-panel,.install-prompt,.actions .btn,#map,.fav-btn{display:none!important;}
+  .form-panel,.install-prompt,.actions .btn,#map,.fav-btn,.ai-box{display:none!important;}
   .wrap{display:block;max-width:900px;}
   body{background:#fff;}
   body::before{display:none;}
@@ -323,7 +351,7 @@ input[type=time]::-webkit-calendar-picker-indicator{
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.5.0</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.7</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -347,7 +375,11 @@ input[type=time]::-webkit-calendar-picker-indicator{
 
       <div class="field" id="area-field">
         <label class="lbl" for="area">Buurt / gebied (optioneel)</label>
-        <select id="area"><option value="">Hele stad (centrum)</option></select>
+        <select id="area"><option value="">Hele stad / automatisch centrum</option></select>
+        <div class="ac-wrap" style="margin-top:8px">
+          <input type="text" id="area-custom" placeholder="Of typ zelf: Centrum, Binnenstad, Punda…" autocomplete="off" disabled />
+          <div class="ac-list" id="area-custom-ac"></div>
+        </div>
         <div class="hint" id="area-hint">Vult zich nadat je een bestemming kiest — handig in grote steden.</div>
       </div>
 
@@ -447,7 +479,9 @@ input[type=time]::-webkit-calendar-picker-indicator{
       <div class="sec" id="sec-eat"></div>
       <div class="sec" id="sec-drink"></div>
       <div class="sec" id="sec-travel"></div>
+      <div class="sec" id="sec-disruptions"></div>
       <div class="sec" id="sec-plan"></div>
+      <div class="sec" id="sec-ai"></div>
       <div class="colophon" id="colophon"></div>
     </div>
 

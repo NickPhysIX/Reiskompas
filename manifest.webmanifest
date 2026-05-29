@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Klaar voor je citytrip met openbare bronnen",
+  "description": "Klaar voor je citytrip met openbare bronnen, buurtfocus en bereikbaarheid/verstoringen",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,24 @@
   "theme_color": "#bd4a26",
   "orientation": "any",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ]
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "version": "1.7"
 }

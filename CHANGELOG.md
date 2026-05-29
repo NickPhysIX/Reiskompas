@@ -1,69 +1,99 @@
 # Changelog
 
-## v1.5.0
+## v1.7
 
-Feature-release: nabijheid en buurtkeuze.
+- Sectie **Bereikbaarheid & verstoringen** toegevoegd.
+- Dagplanning minder prominent gemaakt door deze in te klappen.
+- Auto/EV-output aangevuld met routewegen en controlelinks voor verkeer/werkzaamheden.
+- Voor Nederland links toegevoegd naar Rijkswaterstaat, van A naar Beter, 9292 en NS.
+- OV-output aangevuld met praktische storings-/werkzaamhedencheck.
+- AI-prompt uitgebreid zodat AI expliciet controleert op wegwerkzaamheden, spoorhinder, evenementen en andere verstoringen.
+- Versie en service-worker cache bijgewerkt naar v1.7.
 
-- **Buurt/gebied-dropdown.** Nadat je een bestemming kiest, worden de wijken/buurten uit OpenStreetMap (`place=suburb/neighbourhood/quarter/...`) opgehaald en in een dropdown gezet, gesorteerd op afstand vanaf het centrum. Standaard "Hele stad (centrum)". Kies je bijv. Binnenstad of Punda, dan verschuift het zoekanker daarheen en krimpt de zoekstraal, zodat alles om dat gebied clustert i.p.v. over de hele gemeente.
-- **Afstandssortering + labels.** Elke kaart toont nu de afstand (📍 ± 400 m / ± 1,2 km) vanaf het anker. Parkeren, laadpunten en OV-knooppunten staan dichtstbij-eerst — dit lost het "IKEA-parkeren" op (de garage onder de Markt staat nu boven de P+R aan de rand). Eten/drinken sorteren op nabijheid met behoud van de keuken-/gezelschapsvoorkeur; attracties houden hun interesse-ranking met afstand als tiebreak.
-- **Anker overal consistent.** Route, kaartcentrum, fiets/te-voet-schatting en de Maps-deeplink richten zich nu op de gekozen buurt (of het centrum).
-- Kleinere zoekstraal bij een gekozen buurt (POI 2 km, eten 1,8 km, parkeren 1,2 km).
+## v1.6.1
+- AI-sectie vereenvoudigd.
+- Alleen Gemini en ChatGPT zichtbaar als aanbevolen AI-opties.
+- Claude en Grok verwijderd uit de standaardinterface.
+- Kopieer prompt blijft model-onafhankelijk.
 
-## v1.4.2
+## v1.6
 
-UI-fix.
+- AI-adviesprompt toegevoegd als optionele exportfunctie.
+- Geen Gemini/OpenAI/Claude API-key nodig; de app genereert alleen een kopieerbare prompt.
+- Links toegevoegd naar Gemini, ChatGPT en Claude.
+- Prompt bevat bestemming, focusgebied, datum, vervoer, gezelschap, kinderen, interesses, weerindicatie, voorgestelde plekken, verborgen parels, eten/drinken, favorieten en indicatieve planning.
+- Printweergave houdt de AI-prompt verborgen.
+- Versie en service-worker cache bijgewerkt naar v1.6.
 
-- **Tijdstipveld op iOS netjes in het kader.** De iOS-polish (appearance-reset, links uitlijnen, hoogte) gold alleen voor `input[type=date]`; nu ook voor `input[type=time]`, zodat "Rond hoe laat in de stad?" net als het datumveld links uitlijnt en niet meer gecentreerd in z'n kader zweeft.
-- Versie + service-worker-cachenaam gebumpt naar v1.4.2 — dat forceert meteen de update op de volgende load (geen handmatige SW-refresh meer nodig).
+## v1.5 (Claude branch)
 
-## v1.4.1
+Gebaseerd op v1.4.2.
 
-Patch-release: laatste technische schuld + nieuwe app-icon.
+Belangrijkste toevoeging: ondersteuning voor buurt-/wijkfocus binnen een bestemming.
 
-- **localStorage-bezem.** Cache-sleutels van oudere versies worden bij het opstarten opgeruimd (Gemini-bevinding). Correct geschreven: keys eerst verzamelen, dán wissen — niet de index-shift-bug uit het voorbeeld.
-- **`CACHE_PREFIX` afgeleid van `APP_VERSION`.** Kan niet meer handmatig uit sync raken.
-- **Favorieten-migratie.** Eenmalige overname van favorieten uit oude versie-gebonden sleutels (v1.1–v1.3), zodat niemand z'n bewaarde plekken kwijtraakt door de de-versionering.
-- **Offline hoofdmarker.** Bestemmingsmarker is nu een `circleMarker` (rust met cream rand) i.p.v. de standaard Leaflet-pin, die offline een 404 op z'n PNG gaf en onzichtbaar werd.
-- **Nieuwe app-icon.** Kompasroos met serif-R in het thema (teal/rust/cream), omgebouwd naar full-bleed (geen witte rand of ingebakken hoeken meer), plus een aparte `maskable` variant met veilige zone. Manifest bijgewerkt.
+### Toegevoegd
 
-## v1.4
+- Wijk- en buurtselectie binnen een stad.
+- Kleinere zoekstralen wanneer een specifiek focusgebied wordt gekozen.
+- Afstandssortering voor:
+  - parkeerlocaties
+  - laadpunten
+  - OV-knooppunten
+- Verbeterde relevantie van resultaten binnen grotere steden en regio's.
+- Oplossing voor situaties waarbij resultaten onbedoeld aan de rand van een stad terechtkwamen.
 
-Review-fix release (op basis van code-review van v1.3).
+### Doel
 
-- **Favorietknop apostrof-bug verholpen.** Inline `onclick` vervangen door event-delegation; namen met een apostrof (O'Briens, L'Escale, "Mary's") werken nu. Nieuwe `escAttr()` escapet ook quotes in attribuutwaarden; openingstijden en adres worden nu ook ge-escaped.
-- **Versiestrings gelijkgetrokken.** `<title>` en meta-description stonden nog op v1.2, de colofon op v1.1 — alles nu v1.4. Interne CSS-comment geneutraliseerd zodat een versie-grep schoon is.
-- **Reisgezelschap doet nu iets.** Nieuwe `companionScore()` weegt mee in de ranking: Vrienden → bars/arcade omhoog, Gezin → speeltuin/park/dierentuin omhoog en nachtleven omlaag. Stuurt ook de volgorde van drinkplekken en het borrel-label in de dagplanning.
-- **Hidden gems hersteld.** Sluit nu de al getoonde plekken uit (geen dubbeling met "Zien & doen") en pakt de eerste 3 niet-mainstream tips i.p.v. een willekeurige slice die soms leeg bleef. `museum` uit de mainstream-filter gehaald — bekendheid wordt al via wikidata/wikipedia bepaald.
-- **Favorieten & install-voorkeur ge-de-versioneerd.** `FAV_KEY`/`INSTALL_KEY` niet langer aan het versienummer gekoppeld, zodat ze niet bij elke release verdwijnen. Alleen de data-cache (`CACHE_PREFIX`) blijft versie-gebonden.
-- **Service worker cachet nu ook Leaflet** (CORS, via `allSettled` zodat install niet faalt). Kaartbibliotheek laadt daardoor ook offline; tiles/fonts blijven netwerk-afhankelijk maar de UI crasht niet.
-- **Aparte debounce-timer per adresveld.** Snel wisselen tussen "heen" en "vertrek" annuleert elkaars lookup niet meer.
-- Dode `boosts`-variabele verwijderd.
+Resultaten beter laten aansluiten op het daadwerkelijke gebied dat de gebruiker wil bezoeken in plaats van uitsluitend op de stadsnaam.
 
-## v1.3
+---
 
-QA-fix release.
+## v1.5 (ChatGPT branch)
 
-- Inline JavaScript uit `index.html` verwijderd.
-- Alle applicatielogica geconsolideerd in `app.js`.
-- Versienummer gelijkgetrokken naar v1.3.
-- LocalStorage cache keys bijgewerkt naar v1.3.
-- Service worker cache gebumpt naar `reiskompas-v1-3-static`.
-- Manifest gecontroleerd en opgeschoond.
-- Install-prompt aanwezig gehouden in de HTML.
-- Bronbadge-tekst voor Overpass fallback verduidelijkt.
+Parallelle ontwikkeling gebaseerd op v1.4.2.
 
-## v1.2
+Alternatieve implementatie van bestemmingsfocus met nadruk op flexibiliteit en handmatige invoer.
 
-- Datumveld polish voor iOS.
-- Header-logo gelijkgetrokken met app-icon.
-- Versiebadgecontrast verbeterd.
+### Toegevoegd
 
-## v1.1
+- Handmatige focusinvoer voor buurten en stadsdelen.
+- Photon-gebaseerde autocomplete voor focusgebieden.
+- Ondersteuning voor invoer zoals Centrum, Binnenstad, Punda en Downtown.
+- Centrum-/binnenstad-fallback wanneer geen expliciete buurtinformatie beschikbaar is.
+- Uitgebreidere detectie van buurten en lokale gebieden.
 
-- Overpass failover.
-- LocalStorage caching.
-- Favorieten.
-- Kindvriendelijke ranking.
-- "Niet iedereen kent deze".
-- Printknop.
-- PWA-bestanden toegevoegd.
+### Doel
+
+Ook bruikbare resultaten genereren wanneer OpenStreetMap buurtinformatie onvolledig of inconsistent aanwezig is.
+
+---
+
+## v1.5.1 (Merge release)
+
+Samenvoeging van de Claude v1.5 branch met geselecteerde verbeteringen uit de parallel ontwikkelde ChatGPT v1.5 branch.
+
+### Behouden uit Claude v1.5
+
+- Buurtfocus als hoofdmechanisme.
+- Kleinere zoekstralen bij gekozen focusgebied.
+- Afstandssortering voor parkeren, laadpunten en OV.
+- Verbeterde lokale relevantie van resultaten.
+
+### Overgenomen uit ChatGPT v1.5
+
+- Handmatige focusinvoer.
+- Photon-autocomplete voor buurten en stadsdelen.
+- Centrum-/binnenstad-fallback.
+- Uitgebreidere buurtdetectie.
+
+### Overige wijzigingen
+
+- Metadata opgeschoond.
+- Versienummers gesynchroniseerd.
+- README bijgewerkt.
+- Service worker cacheversies gelijkgetrokken.
+- QA-controles uitgevoerd.
+
+### Resultaat
+
+v1.5.1 combineert de nauwkeurigheid van de Claude-implementatie met de flexibiliteit van de ChatGPT-implementatie.

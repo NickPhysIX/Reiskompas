@@ -8,7 +8,7 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.7';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
@@ -210,43 +210,107 @@ function withDistance(arr, anchor){
 }
 function resetAreaField(){
   state.area=null; state._areas=[];
-  const sel=$('area'); if(sel){ sel.innerHTML='<option value="">Hele stad (centrum)</option>'; }
+  const sel=$('area'); if(sel){ sel.innerHTML='<option value="">Hele stad / automatisch centrum</option>'; }
+  const inp=$('area-custom'); if(inp){ inp.value=''; inp.disabled=true; }
+  const list=$('area-custom-ac'); if(list){ list.innerHTML=''; list.classList.remove('open'); }
   const h=$('area-hint'); if(h) h.textContent='Vult zich nadat je een bestemming kiest — handig in grote steden.';
 }
+async function resolveAreaPlace(text, city){
+  const q=(text||'').trim();
+  if(!q || !city) return null;
+  try{
+    const full=`${q}, ${city.name} ${city.country||''}`;
+    const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(full)}&limit=1&lang=en&lat=${city.lat}&lon=${city.lon}`);
+    const d=await r.json();
+    const f=(d.features||[])[0];
+    if(!f) return null;
+    const p=f.properties||{};
+    const name=p.name||p.city||q;
+    return {name, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], dist:haversine(city,{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}), custom:true};
+  }catch(e){ return null; }
+}
 async function fetchAreas(city){
-  const els = await overpass(
-    ['node["place"~"suburb|neighbourhood|quarter|city_district|borough"]["name"]'],
-    city.lat, city.lon, 9000, 80, 'areas');
   const seen=new Set(); const out=[];
+  const add=a=>{
+    if(!a || !a.name) return;
+    const nm=(a.name||'').trim();
+    const key=nm.toLowerCase();
+    if(!nm || seen.has(key) || key===(city.name||'').toLowerCase()) return;
+    seen.add(key); out.push(a);
+  };
+
+  // Extra useful default: actual centre/binnenstad if Photon can resolve it.
+  const center = await resolveAreaPlace('centrum binnenstad', city);
+  if(center) add({...center, name:'Centrum / binnenstad'});
+
+  const els = await overpass(
+    ['nwr["place"~"suburb|neighbourhood|quarter|city_district|borough|locality"]["name"]'],
+    city.lat, city.lon, 15000, 120, 'areas');
   for(const e of els){
     const nm=(e.tags.name||'').trim();
-    if(nm && !seen.has(nm.toLowerCase())){
-      seen.add(nm.toLowerCase());
-      out.push({name:nm, lat:e.lat, lon:e.lon, dist:haversine(city,{lat:e.lat,lon:e.lon})});
-    }
+    const dist=haversine(city,{lat:e.lat,lon:e.lon});
+    if(dist<=20) add({name:nm, lat:e.lat, lon:e.lon, dist, kind:e.tags.place||catLabel(e)});
   }
-  out.sort((a,b)=>a.dist-b.dist);
-  return out.slice(0,30);
+  out.sort((a,b)=>a.dist-b.dist || a.name.localeCompare(b.name,'nl'));
+  return out.slice(0,35);
 }
 async function loadAreasFor(city){
   if(!city) return;
-  const sel=$('area'), h=$('area-hint');
+  const sel=$('area'), h=$('area-hint'), inp=$('area-custom');
   state.area=null; state._areas=[];
-  if(sel) sel.innerHTML='<option value="">Hele stad (centrum)</option>';
+  if(sel) sel.innerHTML='<option value="">Hele stad / automatisch centrum</option><option value="__loading">Buurten laden…</option>';
+  if(inp){ inp.disabled=false; inp.value=''; }
   if(h) h.textContent='Buurten laden…';
   const areas = await fetchAreas(city);
   state._areas = areas;
   if(sel){
+    sel.innerHTML='<option value="">Hele stad / automatisch centrum</option>';
     areas.forEach((a,i)=>{
       const o=document.createElement('option');
       o.value=i; o.textContent=`${a.name} · ${distLabel(a.dist)}`;
       sel.appendChild(o);
     });
-    sel.onchange=()=>{ const v=sel.value; state.area = v===''?null:(state._areas[+v]||null); };
+    sel.onchange=()=>{ const v=sel.value; state.area = v===''?null:(state._areas[+v]||null); if($('area-custom')) $('area-custom').value=''; };
   }
   if(h) h.textContent = areas.length
-    ? `${areas.length} buurten gevonden — of laat op "Hele stad" staan.`
-    : 'Geen aparte buurten gevonden; we gebruiken het centrum.';
+    ? `${areas.length} buurten/gebieden gevonden — of typ zelf, bijv. Centrum, Punda of Binnenstad.`
+    : 'Geen aparte buurten gevonden; typ eventueel zelf een focusgebied.';
+}
+function setupAreaCustom(){
+  const inp=$('area-custom'), list=$('area-custom-ac'), sel=$('area');
+  if(!inp || !list) return;
+  let timer=null;
+  inp.addEventListener('input',()=>{
+    const q=inp.value.trim();
+    state.area=null;
+    if(sel) sel.value='';
+    clearTimeout(timer);
+    if(q.length<2 || !state.dest){ list.classList.remove('open'); return; }
+    timer=setTimeout(async()=>{
+      try{
+        const full=`${q}, ${state.dest.name} ${state.dest.country||''}`;
+        const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(full)}&limit=6&lang=en&lat=${state.dest.lat}&lon=${state.dest.lon}`);
+        const d=await r.json();
+        list.innerHTML='';
+        (d.features||[]).forEach(f=>{
+          const p=f.properties||{};
+          const name=p.name||p.city||q;
+          const ctx=[p.city&&p.city!==name?p.city:null,p.state,p.country].filter(Boolean).join(', ');
+          const it=document.createElement('div');
+          it.className='ac-item';
+          it.innerHTML=`${esc(name)}<small>${esc(ctx)}</small>`;
+          it.onclick=()=>{
+            inp.value=name;
+            state.area={name, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], dist:haversine(state.dest,{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}), custom:true};
+            list.classList.remove('open');
+          };
+          list.appendChild(it);
+        });
+        list.classList.toggle('open',(d.features||[]).length>0);
+      }catch(e){ list.classList.remove('open'); }
+    },260);
+  });
+  document.addEventListener('click',e=>{ if(!inp.contains(e.target)&&!list.contains(e.target)) list.classList.remove('open'); });
 }
 
 /* ---------- weather ---------- */
@@ -507,6 +571,7 @@ async function generate(){
   let dep = depText ? (state.dep|| await resolveCity(depText)) : null;
   if(!dest){ setStatus(''); $('loading').classList.remove('on'); $('empty').style.display='block';
     alert('Bestemming niet gevonden — kies een suggestie uit de lijst of probeer een andere spelling.'); return; }
+  if(!state.dest){ state.dest=dest; loadAreasFor(dest); }
 
   const city = dest;                                 // stadcentrum (weer + route-doel als geen buurt)
   const anchor = state.area ? state.area : city;     // waar we omheen zoeken
@@ -636,11 +701,14 @@ function renderAll(d){
 
   // travel
   sec('sec-travel', travelTitle(d.mode),'⑤', travelHTML(d), '');
+  sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
 
   // plan
   const plan=buildPlan(d);
   sec('sec-plan','Dagplanning','⑥', planHTML(plan,d), '');
+  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d,plan), 'optioneel');
   window.__plan={plan,date:d.date,dest:d.destText};
+  window.__dossier={...d, plan};
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
@@ -671,6 +739,99 @@ function priceTag(e){
   if(t['price:range'])return `<div class="oh">💶 ${esc(t['price:range'])}</div>`;
   return '';
 }
+
+
+function isNetherlands(d){
+  return (d.dest?.cc||'').toLowerCase()==='nl' || /netherlands|nederland/i.test(d.dest?.country||'');
+}
+function roadRefs(d){
+  return (d.route?.roads||[]).filter(Boolean).slice(0,10);
+}
+function googleTrafficLink(d){
+  const o=d.dep?`${d.dep.lat},${d.dep.lon}`:'';
+  const tgt=d.anchor||d.dest;
+  return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${tgt.lat},${tgt.lon}&travelmode=driving`;
+}
+function nsLink(d){
+  return 'https://www.ns.nl/reisplanner/';
+}
+function disruptionSearchLinks(d){
+  const city=encodeURIComponent(d.destText||d.anchorName||'');
+  const date=encodeURIComponent(d.date||'');
+  const roads=encodeURIComponent(roadRefs(d).join(' '));
+  return {
+    rws:'https://www.rijkswaterstaat.nl/wegen/werkzaamheden',
+    vanAnaarBeter:'https://www.vananaarbeter.nl/',
+    googleTraffic: googleTrafficLink(d),
+    ns: nsLink(d),
+    nsStoringen:'https://www.ns.nl/reisinformatie/actuele-situatie-op-het-spoor',
+    ov9292:'https://9292.nl/',
+    webRoad:`https://www.google.com/search?q=${city}+${roads}+wegwerkzaamheden+${date}`,
+    webRail:`https://www.google.com/search?q=${city}+trein+spoor+werkzaamheden+storing+${date}`
+  };
+}
+function disruptionsHTML(d){
+  const nl=isNetherlands(d);
+  const links=disruptionSearchLinks(d);
+  const roads=roadRefs(d);
+  const roadText=roads.length?`<div class="roadlist">${roads.map(r=>`<span class="road ${/^N/.test(r)?'N':''}">${esc(r)}</span>`).join('')}</div>`:'<div class="na">Geen hoofdwegen afgeleid; vul een vertrekplaats in voor routecontext.</div>';
+  const mode=d.mode;
+  let cards='';
+
+  if(mode==='car'||mode==='ev'){
+    cards+=`<div class="check-card"><h4>🚧 Auto / weg</h4>
+      <div class="sub2">Controleer op de reisdag kort voor vertrek. Reiskompas heeft geen live verkeersfeed.</div>
+      ${roadText}
+      <div class="actions" style="margin-top:11px">
+        <a class="btn solid" target="_blank" rel="noopener" href="${links.googleTraffic}">Google Maps verkeer →</a>
+        ${nl?`<a class="btn" target="_blank" rel="noopener" href="${links.vanAnaarBeter}">van A naar Beter →</a>
+             <a class="btn" target="_blank" rel="noopener" href="${links.rws}">Rijkswaterstaat →</a>`:''}
+        <a class="btn" target="_blank" rel="noopener" href="${links.webRoad}">Webcheck werkzaamheden →</a>
+      </div>
+      <ul>
+        <li>Let op afsluitingen, omleidingen en evenementen rond het centrum/focusgebied.</li>
+        <li>${nl?'Voor Nederland zijn Rijkswaterstaat/van A naar Beter de logische controlepunten.':'Buiten Nederland verschilt de beste bron per land; gebruik lokale verkeersdiensten of Maps/Waze.'}</li>
+      </ul>
+    </div>`;
+  }
+
+  if(mode==='transit' || mode==='foot' || mode==='bike'){
+    cards+=`<div class="check-card"><h4>🚆 OV / spoor</h4>
+      <div class="sub2">Live storingen, perrons en werkzaamheden zitten niet keyless in deze app.</div>
+      <div class="actions" style="margin-top:11px">
+        <a class="btn solid" target="_blank" rel="noopener" href="${links.ov9292}">9292 →</a>
+        ${nl?`<a class="btn" target="_blank" rel="noopener" href="${links.ns}">NS Reisplanner →</a>
+             <a class="btn" target="_blank" rel="noopener" href="${links.nsStoringen}">NS actuele situatie →</a>`:''}
+        <a class="btn" target="_blank" rel="noopener" href="${links.webRail}">Webcheck spoor →</a>
+      </div>
+      <ul>
+        <li>Controleer overstappen, perrons en laatste aansluitingen vlak voor vertrek.</li>
+        <li>Bij grote events kan lokaal OV drukker zijn dan de planner vooraf suggereert.</li>
+      </ul>
+    </div>`;
+  } else {
+    cards+=`<div class="check-card"><h4>🚆 OV-backup</h4>
+      <div class="sub2">Handig als parkeren of verkeer tegenvalt.</div>
+      <div class="actions" style="margin-top:11px">
+        <a class="btn" target="_blank" rel="noopener" href="${links.ov9292}">9292 →</a>
+        ${nl?`<a class="btn" target="_blank" rel="noopener" href="${links.ns}">NS →</a>`:''}
+      </div>
+    </div>`;
+  }
+
+  cards+=`<div class="check-card"><h4>📌 Snelle checklist</h4>
+    <ul>
+      <li>Check verkeer/spoor nogmaals op de ochtend zelf.</li>
+      <li>Controleer openingstijden van je top 2-3 plekken.</li>
+      <li>Check of parkeren reserveren nodig is.</li>
+      <li>Neem bij regen een compacte fallback binnenactiviteit.</li>
+    </ul>
+  </div>`;
+
+  return `<div class="note disruption-note"><b>Indicatief:</b> deze sectie gebruikt doorkliks en routecontext, geen gegarandeerde live storingsdata. Voor beslissingen vlak voor vertrek blijven officiële planners leidend.</div>
+    <div class="checklist" style="margin-top:12px">${cards}</div>`;
+}
+
 
 function travelTitle(m){return {car:'Reisadvies — auto',ev:'Reisadvies — EV',transit:'Reisadvies — OV',bike:'Reisadvies — fiets',foot:'Reisadvies — te voet'}[m];}
 
@@ -762,15 +923,129 @@ function buildPlan(d){
 function fmt(min){const h=Math.floor(min/60)%24,m=min%60;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
 function planHTML(items,d){
   const rows=items.map(it=>`<div class="tl"><div class="tm">${fmt(it.t)}</div><div class="ti">${esc(it.label)}</div>${it.place&&it.place!==it.label?`<div class="tp">${esc(it.place)}</div>`:''}</div>`).join('');
-  return `<div class="timeline">${rows}</div>
+  return `<details class="plan-details">
+    <summary>Toon indicatieve dagplanning</summary>
+    <div class="timeline">${rows}</div>
     <div class="actions">
       <button class="btn solid" onclick="downloadICS()">📅 Exporteer naar agenda (.ics)</button>
       <a class="btn" target="_blank" rel="noopener" href="${transitDeeplink(d)}">🗺️ Route in Maps</a>
       <button class="btn" onclick="window.print()" type="button">🖨️ Print reisdossier</button>
+      <button class="btn" onclick="scrollToAIPrompt()" type="button">✨ AI-adviesprompt</button>
     </div>
-    ${favorites.length?`<div class="note" style="margin-top:11px"><b>⭐ Favorieten:</b> ${favorites.slice(0,8).map(f=>esc(f.name)).join(' · ')}</div>`:''}
-    <div class="na" style="margin-top:8px">Indicatief schema op basis van je interesses en aankomsttijd — schuif gerust met de tijden.</div>`;
+  </details>
+  ${favorites.length?`<div class="note" style="margin-top:11px"><b>⭐ Favorieten:</b> ${favorites.slice(0,8).map(f=>esc(f.name)).join(' · ')}</div>`:''}
+  <div class="na" style="margin-top:8px">Optioneel schema op basis van interesses en aankomsttijd — vooral bedoeld als ruwe houvast.</div>`;
 }
+
+function summarizePois(arr, n=8){
+  return (arr||[]).slice(0,n).map((e,i)=>{
+    const t=e.tags||{};
+    const bits=[`${i+1}. ${t.name||'Onbekend'}`];
+    const type=catLabel(e); if(type) bits.push(`type: ${type}`);
+    const address=addr(t); if(address) bits.push(`adres: ${address}`);
+    if(t.opening_hours) bits.push(`openingstijden: ${t.opening_hours}`);
+    if(t.cuisine) bits.push(`keuken: ${t.cuisine}`);
+    return bits.join(' — ');
+  }).join('\n');
+}
+function buildAIPrompt(d, plan){
+  const companions=[...state.companions].join(', ') || 'niet opgegeven';
+  const interests=INTERESTS.filter(i=>state.interests.has(i.id)).map(i=>i.label).join(', ') || 'algemene citytrip';
+  const cuisines=[...state.cuisines].join(', ') || 'geen specifieke keuken';
+  const weather=d.weather ? `${d.weather.max}°/${d.weather.min}°, ${wlabel(d.weather.code)[0]}, ${d.weather.precip!=null ? (d.weather.kind==='fc'?'neerslagkans ':'natte dagen ~')+d.weather.precip+'%' : 'neerslag onbekend'}` : 'geen weerdata';
+  const area=d.anchorName || d.destText;
+  const planTxt=(plan||[]).map(p=>`- ${fmt(p.t)} ${p.label}${p.place&&p.place!==p.label?' ('+p.place+')':''}`).join('\n');
+  const favTxt=favorites.length ? favorites.slice(0,10).map((f,i)=>`${i+1}. ${f.name}`).join('\n') : 'Geen favorieten geselecteerd.';
+  return `Ik gebruik een kleine open-data reisplanner (“Reiskompas”) en wil graag dat je als praktische reisadviseur meekijkt.
+
+Bestemming:
+- Stad/regio: ${d.destText}
+- Focusgebied/buurt: ${area}
+- Datum: ${d.date}
+- Aankomsttijd: ${d.time}
+- Vervoer: ${travelTitle(d.mode).replace('Reisadvies — ','')}
+- Vertrekplaats: ${d.depText || 'niet opgegeven'}
+
+Gezelschap:
+- Reisgezelschap: ${companions}
+- Kinderen: ${d.kids === 'none' ? 'nee' : d.kids}
+
+Voorkeuren:
+- Interesses: ${interests}
+- Eten: ${state.eat ? 'ja' : 'nee'}
+- Drinken: ${state.drink ? (state.noAlcohol ? 'ja, liefst alcoholvrij/mocktails' : 'ja') : 'nee'}
+- Keukenvoorkeur: ${cuisines}
+
+Weerindicatie:
+- ${weather}
+
+Voorgestelde bezienswaardigheden:
+${summarizePois(d.attractions,9) || 'Geen resultaten.'}
+
+Minder voor de hand liggende tips:
+${summarizePois(hiddenGems(d.attractions, new Set((d.attractions||[]).slice(0,9).map(favId))),3) || 'Geen aparte verborgen parels gevonden.'}
+
+Eten:
+${summarizePois(d.eats,8) || 'Geen eetresultaten of eten niet geselecteerd.'}
+
+Drinken:
+${summarizePois(d.drinks,8) || 'Geen drinkresultaten of drinken niet geselecteerd.'}
+
+Favorieten:
+${favTxt}
+
+Indicatieve planning uit Reiskompas:
+${planTxt}
+
+Maak hiervan een praktisch, menselijk dagadvies. Controleer in je advies ook expliciet mogelijke wegwerkzaamheden, spoorstoringen, evenementen of andere bereikbaarheidshinder voor deze datum/route, en zeg waar ik dat vlak voor vertrek moet verifiëren. 
+Houd rekening met:
+- logische volgorde en reistijd tussen plekken;
+- weer;
+- kinderen/gezelschap;
+- parkeer- of OV-realiteit;
+- lunch/koffie/rustmomenten;
+- niet te vol plannen.
+
+Geef:
+1. Een rustige variant.
+2. Een normale variant.
+3. Een volle variant.
+4. Twee dingen die je zou schrappen als de dag tegenvalt.
+5. Eventuele waarschuwingen over openingstijden, reserveren of afstanden.
+
+Gebruik alleen de informatie hierboven als basis. Zeg expliciet waar iets onzeker is.`;
+}
+function aiPromptHTML(d,plan){
+  const prompt=esc(buildAIPrompt(d,plan));
+  return `<div class="ai-box">
+    <div class="note"><b>Geen API, geen accountkoppeling.</b> Reiskompas maakt alleen een nette prompt. Kopieer die naar Gemini, ChatGPT of Claude voor optioneel reisadvies.</div>
+    <textarea id="aiPromptText" readonly>${prompt}</textarea>
+    <div class="ai-tools">
+      <button class="btn solid" type="button" onclick="copyAIPrompt()">📋 Kopieer prompt</button>
+      <a class="btn" target="_blank" rel="noopener" href="https://gemini.google.com/app">Open Gemini →</a>
+      <a class="btn" target="_blank" rel="noopener" href="https://chatgpt.com/">Open ChatGPT →</a>
+      <a class="btn" target="_blank" rel="noopener" href="https://claude.ai/">Open Claude →</a>
+    </div>
+    <div class="ai-small">Tip: kopieer de prompt, open je AI-tool naar keuze en plak hem daar. Zo blijft deze GitHub Pages-app clean, lean en zonder API-keys.</div>
+  </div>`;
+}
+async function copyAIPrompt(){
+  const el=$('aiPromptText');
+  if(!el) return;
+  try{
+    await navigator.clipboard.writeText(el.value);
+    alert('AI-prompt gekopieerd.');
+  }catch(e){
+    el.focus(); el.select();
+    document.execCommand('copy');
+    alert('AI-prompt gekopieerd.');
+  }
+}
+function scrollToAIPrompt(){
+  const el=$('sec-ai');
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 function downloadICS(){
   const {plan,date,dest}=window.__plan||{};
   if(!plan) return;
@@ -825,6 +1100,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   buildChips();
   setupAutocomplete('dest','dest-ac','dest');
   setupAutocomplete('dep','dep-ac','dep');
+  setupAreaCustom();
   const t=new Date(); t.setDate(t.getDate()+1);
   $('date').value=t.toISOString().split('T')[0];
   $('go').addEventListener('click',generate);
