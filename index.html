@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas — klaar voor je citytrip</title>
-<meta name="description" content="Bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route en parkeren." />
+<title>Reiskompas v1.1 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v1.1: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Reiskompas" />
 <link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
 <link rel="icon" href="icon-192.png" />
 
 <!-- Fonts -->
@@ -257,6 +258,47 @@ input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,
   font-size:12px;color:var(--ink-faint);line-height:1.6;}
 .colophon b{color:var(--ink-soft);}
 .regen{margin-top:10px;}
+
+/* ---------- v1.1 polish ---------- */
+.version-badge{
+  display:inline-block;margin-left:8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--paper);background:var(--teal);border-radius:999px;padding:3px 8px;vertical-align:middle;
+}
+.poi{position:relative;}
+.fav-btn{
+  position:absolute;right:10px;top:9px;border:1px solid var(--line);background:rgba(251,246,238,.86);
+  border-radius:999px;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;
+  font-size:15px;line-height:1;transition:transform .12s, border-color .12s, background .12s;
+}
+.fav-btn:hover{transform:scale(1.06);border-color:var(--gold);}
+.fav-btn.on{background:rgba(192,138,45,.22);border-color:var(--gold);}
+.poi .nm{padding-right:30px;}
+.source-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.source-badge{
+  display:inline-block;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:700;
+  padding:3px 8px;border-radius:999px;background:rgba(29,106,92,.12);color:var(--teal-deep);
+}
+.source-badge.warn{background:rgba(192,138,45,.18);color:#75510e;}
+.source-badge.err{background:rgba(189,74,38,.13);color:var(--rust-deep);}
+.install-prompt{
+  position:fixed;left:16px;right:16px;bottom:16px;z-index:10000;max-width:560px;margin:auto;
+  background:var(--ink);color:var(--paper);border:1px solid rgba(255,255,255,.18);border-radius:14px;
+  box-shadow:0 18px 50px -24px rgba(0,0,0,.75);padding:13px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;
+  font-size:13px;line-height:1.35;
+}
+.install-prompt span{color:rgba(243,233,218,.78);}
+.mini-btn{
+  border:1px solid rgba(255,255,255,.25);background:transparent;color:var(--paper);border-radius:999px;
+  padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;
+}
+@media print{
+  .form-panel,.install-prompt,.actions .btn,#map,.fav-btn{display:none!important;}
+  .wrap{display:block;max-width:900px;}
+  body{background:#fff;}
+  body::before{display:none;}
+  .sec{break-inside:avoid;opacity:1;transform:none;animation:none;}
+}
+
 </style>
 </head>
 <body>
@@ -265,7 +307,7 @@ input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,
   <div class="brandrow">
     <div class="seal">R</div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.1</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -379,6 +421,7 @@ input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,
     <div id="content">
       <div class="sec" id="sec-weather"></div>
       <div class="sec" id="sec-do"></div>
+      <div class="sec" id="sec-gems"></div>
       <div class="sec" id="sec-eat"></div>
       <div class="sec" id="sec-drink"></div>
       <div class="sec" id="sec-travel"></div>
@@ -389,6 +432,11 @@ input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,
   </section>
 </main>
 
+<div class="install-prompt hidden" id="installPrompt">
+  <div><b>📱 Installeer Reiskompas</b><br><span>Op iPhone/iPad: deelknop → zet op beginscherm.</span></div>
+  <button class="mini-btn" id="installDismiss" type="button">Niet meer tonen</button>
+</div>
+
 <script>
 /* =========================================================================
    Reiskompas — keyless city-trip prep.
@@ -398,6 +446,47 @@ input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(189,
    ========================================================================= */
 
 const $ = id => document.getElementById(id);
+
+const APP_VERSION = '1.1';
+const CACHE_PREFIX = 'reiskompas-cache-v1.1:';
+const FAV_KEY = 'reiskompas-favorites-v1.1';
+const INSTALL_KEY = 'reiskompas-install-dismissed-v1.1';
+const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
+const sourceStatus = { overpass: 'live' };
+let favorites = loadFavorites();
+
+function cacheKey(type, parts){ return CACHE_PREFIX + type + ':' + parts.map(p=>String(p ?? '').toLowerCase()).join('|'); }
+function cacheGet(type, parts, ttl){
+  try{
+    const raw = localStorage.getItem(cacheKey(type, parts));
+    if(!raw) return null;
+    const item = JSON.parse(raw);
+    if(!item || Date.now() - item.t > ttl) return null;
+    return item.v;
+  }catch(e){ return null; }
+}
+function cacheSet(type, parts, val){
+  try{ localStorage.setItem(cacheKey(type, parts), JSON.stringify({t:Date.now(), v:val})); }catch(e){}
+}
+function loadFavorites(){
+  try{ return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); }catch(e){ return []; }
+}
+function saveFavorites(){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(favorites.slice(0,50))); }catch(e){} }
+function favId(e){ return e && e.id ? e.id : ((e?.tags?.name||'')+'@'+Math.round((e?.lat||0)*10000)+','+Math.round((e?.lon||0)*10000)); }
+function isFav(e){ const id=favId(e); return favorites.some(f=>f.id===id); }
+function toggleFavorite(id){
+  const btn = document.querySelector(`[data-fav="${CSS.escape(id)}"]`);
+  const raw = btn?.dataset.poi;
+  if(!raw) return;
+  const poi = JSON.parse(decodeURIComponent(raw));
+  const ix = favorites.findIndex(f=>f.id===id);
+  if(ix>=0) favorites.splice(ix,1); else favorites.unshift(poi);
+  saveFavorites();
+  document.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b=>{ const on=ix<0; b.classList.toggle('on',on); b.textContent=on?'★':'☆'; b.title=on?'Verwijder favoriet':'Bewaar als favoriet'; });
+}
+function serializePoi(e, tag){ return encodeURIComponent(JSON.stringify({id:favId(e), name:e.tags.name, tag:tag||catLabel(e), lat:e.lat, lon:e.lon, address:addr(e.tags)})); }
+function asNum(n){ return Math.round(Number(n)*1000)/1000; }
+
 
 /* ---------- interesse → OSM tags ---------- */
 const INTERESTS = [
@@ -412,6 +501,7 @@ const INTERESTS = [
   {id:'winkelen',  label:'Winkelen',         em:'🛍️', osm:['nwr["shop"~"mall|department_store"]']},
   {id:'view',      label:'Uitzicht & foto',  em:'📷', osm:['nwr["tourism"~"viewpoint|artwork"]']},
   {id:'pretpark',  label:'Pretparken',       em:'🎢', osm:['nwr["tourism"="theme_park"]']},
+  {id:'kidsfun',   label:'Kindvriendelijk',  em:'🧒', osm:['nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]','nwr["leisure"="park"]']},
 ];
 
 const CUISINES = [
@@ -532,6 +622,8 @@ const WCODE={0:['Helder','☀️'],1:['Overwegend zonnig','🌤️'],2:['Half be
 function wlabel(c){ return WCODE[c]||['Wisselend','🌥️']; }
 
 async function getWeather(lat,lon,date){
+  const cached = cacheGet('weather',[asNum(lat),asNum(lon),date],TTL.weather);
+  if(cached) return cached;
   const today=new Date(); today.setHours(0,0,0,0);
   const target=new Date(date+'T00:00:00');
   const diff=Math.round((target-today)/86400000);
@@ -543,14 +635,18 @@ async function getWeather(lat,lon,date){
         `&timezone=auto&start_date=${date}&end_date=${date}`;
       const d=await(await fetch(u)).json();
       if(d.daily&&d.daily.time.length){
-        return {kind:'fc',code:d.daily.weather_code[0],
+        const out = {kind:'fc',code:d.daily.weather_code[0],
           max:Math.round(d.daily.temperature_2m_max[0]),min:Math.round(d.daily.temperature_2m_min[0]),
           precip:d.daily.precipitation_probability_max[0]??null,wind:Math.round(d.daily.wind_speed_10m_max[0])};
+        cacheSet('weather',[asNum(lat),asNum(lon),date],out);
+        return out;
       }
     }catch(e){}
   }
   // anders: klimatologie — gemiddelde van die kalenderdag over afgelopen 5 jaar
-  return await getClimatology(lat,lon,target);
+  const out = await getClimatology(lat,lon,target);
+  if(out) cacheSet('weather',[asNum(lat),asNum(lon),date],out);
+  return out;
 }
 async function getClimatology(lat,lon,target){
   const mmdd=`${String(target.getMonth()+1).padStart(2,'0')}-${String(target.getDate()).padStart(2,'0')}`;
@@ -597,20 +693,40 @@ function weatherAdvice(w){
 }
 
 /* ---------- Overpass ---------- */
-const OVERPASS='https://overpass-api.de/api/interpreter';
-async function overpass(clauses,lat,lon,radius=4500,limit=80){
+const OVERPASS_SERVERS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+async function overpass(clauses,lat,lon,radius=4500,limit=80,cacheType='poi'){
   if(!clauses.length) return [];
+  const cacheParts = [cacheType, clauses.join(','), asNum(lat), asNum(lon), radius, limit];
+  const cached = cacheGet('overpass', cacheParts, cacheType==='food'?TTL.food:TTL.poi);
+  if(cached){ sourceStatus.overpass='cache'; return cached; }
   const body=`[out:json][timeout:25];(`+
     clauses.map(c=>`${c}(around:${radius},${lat},${lon});`).join('')+
     `);out center ${limit};`;
-  try{
-    const r=await fetch(OVERPASS,{method:'POST',body:'data='+encodeURIComponent(body)});
-    const d=await r.json();
-    return (d.elements||[]).map(e=>({
-      id:e.type[0]+e.id, tags:e.tags||{},
-      lat:e.lat??e.center?.lat, lon:e.lon??e.center?.lon
-    })).filter(e=>e.lat&&e.tags.name);
-  }catch(e){ return []; }
+  let lastErr=null;
+  for(const endpoint of OVERPASS_SERVERS){
+    try{
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 28000);
+      const r=await fetch(endpoint,{method:'POST',body:'data='+encodeURIComponent(body),signal:ctrl.signal});
+      clearTimeout(timer);
+      if(!r.ok) throw new Error('Overpass '+r.status);
+      const d=await r.json();
+      const out=(d.elements||[]).map(e=>({
+        id:e.type[0]+e.id, tags:e.tags||{},
+        lat:e.lat??e.center?.lat, lon:e.lon??e.center?.lon
+      })).filter(e=>e.lat&&e.tags.name);
+      cacheSet('overpass', cacheParts, out);
+      sourceStatus.overpass = endpoint.includes('kumi')?'live/fallback':endpoint.includes('lz4')?'live/fallback':'live';
+      return out;
+    }catch(e){ lastErr=e; }
+  }
+  sourceStatus.overpass='error';
+  console.warn('Overpass unavailable', lastErr);
+  return [];
 }
 function dedupe(arr){
   const seen=new Set(); const out=[];
@@ -628,9 +744,12 @@ function osmLink(id){return `https://www.openstreetmap.org/${id.startsWith('n')?
 
 function poiCard(e,tag,extra=''){
   const t=e.tags;
+  const id=favId(e);
+  const on=isFav(e);
   const oh=t.opening_hours?`<div class="oh">🕒 ${t.opening_hours}</div>`:`<div class="oh na">openingstijden n.b.</div>`;
   const a=addr(t); const ad=a?`<div class="ad">${a}</div>`:`<div class="ad na">adres n.b.</div>`;
   return `<div class="poi">
+    <button class="fav-btn ${on?'on':''}" data-fav="${esc(id)}" data-poi="${serializePoi(e,tag)}" onclick="toggleFavorite('${esc(id)}')" title="${on?'Verwijder favoriet':'Bewaar als favoriet'}" type="button">${on?'★':'☆'}</button>
     ${tag?`<div class="tag">${tag}</div>`:''}
     <div class="nm">${esc(t.name)}</div>
     ${ad}${oh}${extra}
@@ -669,6 +788,54 @@ function busyness(date,time){
   return {lvl:'low',txt:'rustig verwacht op dit tijdstip'};
 }
 
+
+/* ---------- v1.1 ranking ---------- */
+function childScore(e,kids){
+  if(kids==='none') return 0;
+  const t=e.tags||{}, hay=((t.name||'')+' '+(t.tourism||'')+' '+(t.leisure||'')+' '+(t.amenity||'')+' '+(t.shop||'')).toLowerCase();
+  let s=0;
+  if(kids==='0-4'){
+    if(/playground|park|garden|zoo|ice_cream/.test(hay)) s+=8;
+    if(/gallery|monument|memorial|ruins/.test(hay)) s-=3;
+  } else if(kids==='5-12'){
+    if(/lego|toy|playground|zoo|theme_park|science|museum|aquarium|ice_cream/.test(hay)) s+=7;
+    if(/gallery|memorial/.test(hay)) s-=2;
+  } else if(kids==='13-18'){
+    if(/arcade|games|video|mall|shop|museum|viewpoint|artwork|cinema|comic|manga/.test(hay)) s+=6;
+  }
+  if(t.opening_hours) s+=1;
+  if(addr(t)) s+=1;
+  return s;
+}
+function interestScore(e, chosen){
+  const t=e.tags||{}, hay=((t.name||'')+' '+Object.values(t).join(' ')).toLowerCase();
+  let s=0;
+  chosen.forEach(it=>{ if(it.boost && it.boost.test(hay)) s+=12; });
+  if(t.tourism==='museum') s+=2;
+  if(t.tourism==='attraction') s+=1;
+  if(t.wikidata || t.wikipedia) s+=3;
+  return s;
+}
+function rankPlaces(arr, chosen, kids){
+  return arr.map((e,i)=>({e,i,s:interestScore(e,chosen)+childScore(e,kids)}))
+    .sort((a,b)=> b.s-a.s || a.i-b.i)
+    .map(x=>x.e);
+}
+function hiddenGems(arr){
+  return arr.filter(e=>{
+    const t=e.tags||{};
+    const hay=((t.name||'')+' '+Object.values(t).join(' ')).toLowerCase();
+    const mainstream = t.wikidata || t.wikipedia || /central|station|museum|cathedral|palace|castle|rijksmuseum|louvre|colosseum|eiffel/.test(hay);
+    return !mainstream && (t.shop || t.leisure || t.amenity || t.tourism || t.historic);
+  }).slice(9,15).slice(0,3);
+}
+function sourceBadges(){
+  const st=sourceStatus.overpass;
+  const cls=st==='error'?'err':st==='cache'?'warn':'';
+  const txt=st==='error'?'Overpass tijdelijk niet bereikbaar':st==='cache'?'OSM uit lokale cache':'OSM live data';
+  return `<div class="source-row"><span class="source-badge ${cls}">${txt}</span><span class="source-badge warn">Openingstijden/tarieven indicatief</span></div>`;
+}
+
 /* ---------- main ---------- */
 async function generate(){
   const destText=$('dest').value.trim();
@@ -703,24 +870,19 @@ async function generate(){
   const chosen=INTERESTS.filter(it=>state.interests.has(it.id));
   (chosen.length?chosen:INTERESTS.filter(it=>['musea','arch','view'].includes(it.id)))
     .forEach(it=>clauses.push(...it.osm));
+  if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]');
   clauses=[...new Set(clauses)];
-  let attractions=dedupe(await overpass(clauses,C.lat,C.lon));
+  let attractions=dedupe(await overpass(clauses,C.lat,C.lon,4500,100,'poi'));
   // boost op naam (lego/comics/scifi)
   const boosts=chosen.map(it=>it.boost).filter(Boolean);
-  if(boosts.length){
-    attractions.sort((a,b)=>{
-      const ba=boosts.some(re=>re.test(a.tags.name))?1:0;
-      const bb=boosts.some(re=>re.test(b.tags.name))?1:0;
-      return bb-ba;
-    });
-  }
+  attractions = rankPlaces(attractions, chosen, kids);
 
   // eten / drinken
   let eats=[],drinks=[];
   if(state.eat||state.drink){
     setStatus('Eet- en drinkgelegenheden zoeken…');
     const food=dedupe(await overpass(
-      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream"]'],C.lat,C.lon,3500,120));
+      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream"]'],C.lat,C.lon,3500,120,'food'));
     const cuiRes=CUISINES.filter(c=>state.cuisines.has(c.label));
     food.forEach(f=>{
       const am=f.tags.amenity;
@@ -732,6 +894,7 @@ async function generate(){
       eats=eats.filter(f=>{ const c=(f.tags.cuisine||'').toLowerCase();
         return cuiRes.some(cu=>cu.re.test(c)); });
     }
+    if(kids !== 'none') eats.sort((a,b)=> childScore(b,kids)-childScore(a,kids));
     if(state.noAlcohol){ // mocktail/koffie eerst: cafes vooraan, bars achteraan
       drinks.sort((a,b)=> (a.tags.amenity==='cafe'?-1:1)-(b.tags.amenity==='cafe'?-1:1));
     }
@@ -743,12 +906,12 @@ async function generate(){
   let route=null, parking=[], charging=[], stops=[];
   if((mode==='car'||mode==='ev')){
     if(dep) route=await osrmRoute(dep,C);
-    parking=dedupe(await overpass(['nwr["amenity"="parking"]'],C.lat,C.lon,2500,40));
-    if(mode==='ev') charging=dedupe(await overpass(['nwr["amenity"="charging_station"]'],C.lat,C.lon,4000,40));
+    parking=dedupe(await overpass(['nwr["amenity"="parking"]'],C.lat,C.lon,2500,40,'parking'));
+    if(mode==='ev') charging=dedupe(await overpass(['nwr["amenity"="charging_station"]'],C.lat,C.lon,4000,40,'charging'));
   } else if(mode==='transit'){
     stops=dedupe(await overpass(
       ['nwr["public_transport"="station"]','nwr["railway"="station"]','nwr["railway"="tram_stop"]','nwr["station"="subway"]'],
-      C.lat,C.lon,2000,30));
+      C.lat,C.lon,2000,30,'transit'));
   }
 
   renderAll({dest:C,dep,destText,depText,date,time,mode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
@@ -785,9 +948,15 @@ function renderAll(d){
 
   // do
   const doHTML = d.attractions.length
-    ? `<div class="grid">${d.attractions.slice(0,9).map(e=>poiCard(e,catLabel(e))).join('')}</div>`
+    ? sourceBadges()+`<div class="grid">${d.attractions.slice(0,9).map(e=>poiCard(e,catLabel(e))).join('')}</div>`
     : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`;
   sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(9,d.attractions.length)} plekken`:'');
+
+  // hidden gems
+  const gems = hiddenGems(d.attractions);
+  if(gems.length){
+    sec('sec-gems','Niet iedereen kent deze','②b',`<div class="grid">${gems.map(e=>poiCard(e,catLabel(e))).join('')}</div>`,`${gems.length} tips`);
+  } else clearSec('sec-gems');
 
   // eat
   if(state.eat){
@@ -816,7 +985,7 @@ function renderAll(d){
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
-    Alles live opgehaald, geen API-keys. Prijzen, live verkeersdrukte en exacte OV-tijden zitten niet in gratis open bronnen — daarvoor staan doorkliks naar de officiële planners.
+    v1.1 gebruikt live data waar mogelijk, met lokale cache en Overpass-failover. Geen API-keys. Prijzen, live verkeersdrukte en exacte OV-tijden zitten niet in gratis open bronnen — daarvoor staan doorkliks naar de officiële planners.
     <div class="regen"><button class="btn" onclick="document.getElementById('go').scrollIntoView({behavior:'smooth'})">↺ Plan aanpassen</button></div>`;
 
   // map
@@ -936,7 +1105,9 @@ function planHTML(items,d){
     <div class="actions">
       <button class="btn solid" onclick="downloadICS()">📅 Exporteer naar agenda (.ics)</button>
       <a class="btn" target="_blank" rel="noopener" href="${transitDeeplink(d)}">🗺️ Route in Maps</a>
+      <button class="btn" onclick="window.print()" type="button">🖨️ Print reisdossier</button>
     </div>
+    ${favorites.length?`<div class="note" style="margin-top:11px"><b>⭐ Favorieten:</b> ${favorites.slice(0,8).map(f=>esc(f.name)).join(' · ')}</div>`:''}
     <div class="na" style="margin-top:8px">Indicatief schema op basis van je interesses en aankomsttijd — schuif gerust met de tijden.</div>`;
 }
 function downloadICS(){
@@ -976,6 +1147,16 @@ function initMap(d){
   setTimeout(()=>_map.invalidateSize(),200);
 }
 
+
+function setupInstallPrompt(){
+  const box=$('installPrompt'), btn=$('installDismiss');
+  if(!box || localStorage.getItem(INSTALL_KEY)==='1') return;
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  const isiOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(isiOS && !isStandalone) setTimeout(()=>box.classList.remove('hidden'), 1200);
+  if(btn) btn.onclick=()=>{ localStorage.setItem(INSTALL_KEY,'1'); box.classList.add('hidden'); };
+}
+
 /* ---------- init ---------- */
 window.addEventListener('DOMContentLoaded',()=>{
   buildChips();
@@ -985,6 +1166,9 @@ window.addEventListener('DOMContentLoaded',()=>{
   $('date').value=t.toISOString().split('T')[0];
   $('go').addEventListener('click',generate);
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+
+  setupInstallPrompt();
+
 });
 </script>
 </body>
