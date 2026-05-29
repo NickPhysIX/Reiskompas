@@ -9,7 +9,8 @@ Client-side HTML/PWA voor het voorbereiden van een stadsbezoek met openbare bron
 - Overpass failover over meerdere publieke endpoints, met abort-timeout.
 - LocalStorage-cache om herhaalde API-calls te beperken (TTL per type).
 - Favorieten (★), bewaard over releases heen.
-- Interesse-, kind- én gezelschapsgevoelige ranking.
+- Interesse-, kind- én gezelschapsgevoelige ranking, met afstand als tiebreak.
+- Buurt/gebied-keuze per stad (OSM) met afstandssortering en labels op alle kaarten.
 - Sectie "Niet iedereen kent deze" (zonder dubbeling met de hoofdlijst).
 - Dagplanning met ICS-export, Maps-deeplink en printweergave.
 - PWA-installatie met manifest en service worker (cachet ook Leaflet voor offline).

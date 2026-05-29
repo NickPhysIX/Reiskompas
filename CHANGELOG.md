@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5.0
+
+Feature-release: nabijheid en buurtkeuze.
+
+- **Buurt/gebied-dropdown.** Nadat je een bestemming kiest, worden de wijken/buurten uit OpenStreetMap (`place=suburb/neighbourhood/quarter/...`) opgehaald en in een dropdown gezet, gesorteerd op afstand vanaf het centrum. Standaard "Hele stad (centrum)". Kies je bijv. Binnenstad of Punda, dan verschuift het zoekanker daarheen en krimpt de zoekstraal, zodat alles om dat gebied clustert i.p.v. over de hele gemeente.
+- **Afstandssortering + labels.** Elke kaart toont nu de afstand (📍 ± 400 m / ± 1,2 km) vanaf het anker. Parkeren, laadpunten en OV-knooppunten staan dichtstbij-eerst — dit lost het "IKEA-parkeren" op (de garage onder de Markt staat nu boven de P+R aan de rand). Eten/drinken sorteren op nabijheid met behoud van de keuken-/gezelschapsvoorkeur; attracties houden hun interesse-ranking met afstand als tiebreak.
+- **Anker overal consistent.** Route, kaartcentrum, fiets/te-voet-schatting en de Maps-deeplink richten zich nu op de gekozen buurt (of het centrum).
+- Kleinere zoekstraal bij een gekozen buurt (POI 2 km, eten 1,8 km, parkeren 1,2 km).
+
 ## v1.4.2
 
 UI-fix.

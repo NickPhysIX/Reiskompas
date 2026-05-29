@@ -8,7 +8,7 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.4.2';
+const APP_VERSION = '1.5.0';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
@@ -104,7 +104,7 @@ const CUISINES = [
 ];
 
 const state = {
-  dest:null, dep:null,
+  dest:null, dep:null, area:null, _areas:[],
   companions:new Set(['Samen']),
   interests:new Set(),
   eat:false, drink:false, noAlcohol:false,
@@ -155,6 +155,7 @@ function setupAutocomplete(inputId,listId,key){
   let timer=null;
   inp.addEventListener('input',()=>{
     state[key]=null;
+    if(key==='dest') resetAreaField();
     const q=inp.value.trim();
     clearTimeout(timer);
     if(q.length<2){ list.classList.remove('open'); return; }
@@ -175,6 +176,7 @@ function setupAutocomplete(inputId,listId,key){
             state[key]={lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],
                         name:city,country:p.country||'',cc:(p.countrycode||'').toLowerCase()};
             list.classList.remove('open');
+            if(key==='dest') loadAreasFor(state.dest);
           };
           list.appendChild(it);
         });
@@ -195,6 +197,56 @@ async function resolveCity(text){
     return {lat:+p.lat,lon:+p.lon,name:(p.display_name||text).split(',')[0],
             country:p.address?.country||'',cc:(p.address?.country_code||'').toLowerCase()};
   }catch(e){ return null; }
+}
+
+/* ---------- buurten / gebied + afstand ---------- */
+function distLabel(km){
+  if(km==null||isNaN(km)) return '';
+  return km<1 ? `± ${Math.round(km*1000)} m` : `± ${km.toFixed(1).replace('.',',')} km`;
+}
+function withDistance(arr, anchor){
+  if(anchor) arr.forEach(e=>{ e._dist = haversine(anchor,{lat:e.lat,lon:e.lon}); });
+  return arr;
+}
+function resetAreaField(){
+  state.area=null; state._areas=[];
+  const sel=$('area'); if(sel){ sel.innerHTML='<option value="">Hele stad (centrum)</option>'; }
+  const h=$('area-hint'); if(h) h.textContent='Vult zich nadat je een bestemming kiest — handig in grote steden.';
+}
+async function fetchAreas(city){
+  const els = await overpass(
+    ['node["place"~"suburb|neighbourhood|quarter|city_district|borough"]["name"]'],
+    city.lat, city.lon, 9000, 80, 'areas');
+  const seen=new Set(); const out=[];
+  for(const e of els){
+    const nm=(e.tags.name||'').trim();
+    if(nm && !seen.has(nm.toLowerCase())){
+      seen.add(nm.toLowerCase());
+      out.push({name:nm, lat:e.lat, lon:e.lon, dist:haversine(city,{lat:e.lat,lon:e.lon})});
+    }
+  }
+  out.sort((a,b)=>a.dist-b.dist);
+  return out.slice(0,30);
+}
+async function loadAreasFor(city){
+  if(!city) return;
+  const sel=$('area'), h=$('area-hint');
+  state.area=null; state._areas=[];
+  if(sel) sel.innerHTML='<option value="">Hele stad (centrum)</option>';
+  if(h) h.textContent='Buurten laden…';
+  const areas = await fetchAreas(city);
+  state._areas = areas;
+  if(sel){
+    areas.forEach((a,i)=>{
+      const o=document.createElement('option');
+      o.value=i; o.textContent=`${a.name} · ${distLabel(a.dist)}`;
+      sel.appendChild(o);
+    });
+    sel.onchange=()=>{ const v=sel.value; state.area = v===''?null:(state._areas[+v]||null); };
+  }
+  if(h) h.textContent = areas.length
+    ? `${areas.length} buurten gevonden — of laat op "Hele stad" staan.`
+    : 'Geen aparte buurten gevonden; we gebruiken het centrum.';
 }
 
 /* ---------- weather ---------- */
@@ -332,11 +384,12 @@ function poiCard(e,tag,extra=''){
   const on=isFav(e);
   const oh=t.opening_hours?`<div class="oh">🕒 ${esc(t.opening_hours)}</div>`:`<div class="oh na">openingstijden n.b.</div>`;
   const a=addr(t); const ad=a?`<div class="ad">${esc(a)}</div>`:`<div class="ad na">adres n.b.</div>`;
+  const di=e._dist!=null?`<div class="oh">📍 ${distLabel(e._dist)}</div>`:'';
   return `<div class="poi">
     <button class="fav-btn ${on?'on':''}" data-fav="${escAttr(id)}" data-poi="${serializePoi(e,tag)}" title="${on?'Verwijder favoriet':'Bewaar als favoriet'}" type="button">${on?'★':'☆'}</button>
     ${tag?`<div class="tag">${esc(tag)}</div>`:''}
     <div class="nm">${esc(t.name)}</div>
-    ${ad}${oh}${extra}
+    ${ad}${oh}${di}${extra}
     <a class="lk" href="${gmaps(e.lat,e.lon)}" target="_blank" rel="noopener">Open in kaart →</a>
   </div>`;
 }
@@ -414,7 +467,7 @@ function companionScore(e, companions){
 }
 function rankPlaces(arr, chosen, kids, companions){
   return arr.map((e,i)=>({e,i,s:interestScore(e,chosen)+childScore(e,kids)+companionScore(e,companions)}))
-    .sort((a,b)=> b.s-a.s || a.i-b.i)
+    .sort((a,b)=> b.s-a.s || ((a.e._dist??1e9)-(b.e._dist??1e9)) || a.i-b.i)
     .map(x=>x.e);
 }
 function hiddenGems(arr, shownIds){
@@ -455,11 +508,17 @@ async function generate(){
   if(!dest){ setStatus(''); $('loading').classList.remove('on'); $('empty').style.display='block';
     alert('Bestemming niet gevonden — kies een suggestie uit de lijst of probeer een andere spelling.'); return; }
 
-  const C=dest; // center
+  const city = dest;                                 // stadcentrum (weer + route-doel als geen buurt)
+  const anchor = state.area ? state.area : city;     // waar we omheen zoeken
+  const tight = !!state.area;                        // buurt gekozen → kleinere straal
+  const R = tight
+    ? { poi:2000, food:1800, park:1200, charge:2500, transit:1300 }
+    : { poi:4500, food:3500, park:2500, charge:4000, transit:2000 };
+  const anchorName = state.area ? state.area.name : destText;
 
-  // weer
+  // weer (altijd op stadsniveau)
   setStatus('Weer ophalen…');
-  const weather=await getWeather(C.lat,C.lon,date);
+  const weather=await getWeather(city.lat,city.lon,date);
 
   // attracties op interesses
   setStatus('Bezienswaardigheden zoeken…');
@@ -469,15 +528,15 @@ async function generate(){
     .forEach(it=>clauses.push(...it.osm));
   if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]');
   clauses=[...new Set(clauses)];
-  let attractions=dedupe(await overpass(clauses,C.lat,C.lon,4500,100,'poi'));
-  attractions = rankPlaces(attractions, chosen, kids, state.companions);
+  let attractions=withDistance(dedupe(await overpass(clauses,anchor.lat,anchor.lon,R.poi,100,'poi')),anchor);
+  attractions = rankPlaces(attractions, chosen, kids, state.companions);  // score primair, afstand als tiebreak
 
   // eten / drinken
   let eats=[],drinks=[];
   if(state.eat||state.drink){
     setStatus('Eet- en drinkgelegenheden zoeken…');
-    const food=dedupe(await overpass(
-      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream"]'],C.lat,C.lon,3500,120,'food'));
+    const food=withDistance(dedupe(await overpass(
+      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream"]'],anchor.lat,anchor.lon,R.food,120,'food')),anchor);
     const cuiRes=CUISINES.filter(c=>state.cuisines.has(c.label));
     food.forEach(f=>{
       const am=f.tags.amenity;
@@ -489,12 +548,11 @@ async function generate(){
       eats=eats.filter(f=>{ const c=(f.tags.cuisine||'').toLowerCase();
         return cuiRes.some(cu=>cu.re.test(c)); });
     }
-    if(kids !== 'none') eats.sort((a,b)=> childScore(b,kids)-childScore(a,kids));
-    // gezelschap stuurt de volgorde van drinkplekken (vrienden → bars/pubs vooraan)
-    drinks.sort((a,b)=> companionScore(b,state.companions)-companionScore(a,state.companions));
-    if(state.noAlcohol){ // alcoholvrij: cafés/koffie vooraan, bars achteraan
-      drinks.sort((a,b)=> (a.tags.amenity==='cafe'?-1:1)-(b.tags.amenity==='cafe'?-1:1));
-    }
+    // eten: kindvriendelijkheid als lichte voorkeur, daarna nabijheid
+    eats.sort((a,b)=> (childScore(b,kids)-childScore(a,kids)) || (a._dist-b._dist));
+    // drinken: voorkeur (alcoholvrij/gezelschap) als tier, daarna nabijheid
+    const drinkPref=x=> (state.noAlcohol?(x.tags.amenity==='cafe'?2:0):0) + companionScore(x,state.companions);
+    drinks.sort((a,b)=> (drinkPref(b)-drinkPref(a)) || (a._dist-b._dist));
     eats=eats.slice(0,9); drinks=drinks.slice(0,9);
   }
 
@@ -502,16 +560,18 @@ async function generate(){
   setStatus('Reisinformatie samenstellen…');
   let route=null, parking=[], charging=[], stops=[];
   if((mode==='car'||mode==='ev')){
-    if(dep) route=await osrmRoute(dep,C);
-    parking=dedupe(await overpass(['nwr["amenity"="parking"]'],C.lat,C.lon,2500,40,'parking'));
-    if(mode==='ev') charging=dedupe(await overpass(['nwr["amenity"="charging_station"]'],C.lat,C.lon,4000,40,'charging'));
+    if(dep) route=await osrmRoute(dep,anchor);
+    parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,40,'parking')),anchor)
+              .sort((a,b)=>a._dist-b._dist);   // dichtstbijzijnde eerst → fixt 'IKEA-parkeren'
+    if(mode==='ev') charging=withDistance(dedupe(await overpass(['nwr["amenity"="charging_station"]'],anchor.lat,anchor.lon,R.charge,40,'charging')),anchor)
+              .sort((a,b)=>a._dist-b._dist);
   } else if(mode==='transit'){
-    stops=dedupe(await overpass(
+    stops=withDistance(dedupe(await overpass(
       ['nwr["public_transport"="station"]','nwr["railway"="station"]','nwr["railway"="tram_stop"]','nwr["station"="subway"]'],
-      C.lat,C.lon,2000,30,'transit'));
+      anchor.lat,anchor.lon,R.transit,30,'transit')),anchor).sort((a,b)=>a._dist-b._dist);
   }
 
-  renderAll({dest:C,dep,destText,depText,date,time,mode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
+  renderAll({dest:city,anchor,anchorName,tight,dep,destText,depText,date,time,mode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
 
   $('loading').classList.remove('on');
   $('content').classList.add('on');
@@ -544,9 +604,10 @@ function renderAll(d){
   sec('sec-weather','Weer','①',wHTML,'');
 
   // do
-  const doHTML = d.attractions.length
+  const areaCaption = `<div class="na" style="margin-bottom:8px">Zoekgebied: <b>${esc(d.anchorName)}</b>${d.tight?' · gekozen buurt, kleinere straal':''}</div>`;
+  const doHTML = areaCaption + (d.attractions.length
     ? sourceBadges()+`<div class="grid">${d.attractions.slice(0,9).map(e=>poiCard(e,catLabel(e))).join('')}</div>`
-    : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`;
+    : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad, een andere buurt of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`);
   sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(9,d.attractions.length)} plekken`:'');
 
   // hidden gems — sluit de al getoonde 9 uit
@@ -626,19 +687,20 @@ function travelHTML(d){
         : `<div class="na">Geen route — vul een vertrekstad in (en kies 'm uit de lijst).</div>`}
       <div class="busy" style="margin-top:11px"><span class="dot ${b.lvl}"></span>${b.txt}</div>
     </div>`;
-    cards+=`<div class="tcard"><h4>🅿️ Parkeren bij bestemming</h4>${
+    cards+=`<div class="tcard"><h4>🅿️ Parkeren — dichtstbij</h4>${
       d.parking.length? d.parking.slice(0,4).map(p=>{
         const fee=p.tags.fee==='yes'?'betaald':p.tags.fee==='no'?'gratis':'tarief n.b.';
         const cap=p.tags.capacity?` · ${p.tags.capacity} plaatsen`:'';
+        const dl=p._dist!=null?` · 📍 ${distLabel(p._dist)}`:'';
         return `<div style="margin-bottom:7px"><b>${esc(p.tags.name||'Parkeergelegenheid')}</b>
-          <div class="sub2">${fee}${cap} · <a class="lk" href="${gmaps(p.lat,p.lon)}" target="_blank" rel="noopener">kaart →</a></div></div>`;
+          <div class="sub2">${fee}${cap}${dl} · <a class="lk" href="${gmaps(p.lat,p.lon)}" target="_blank" rel="noopener">kaart →</a></div></div>`;
       }).join('') : `<div class="na">Geen parkeerdata gevonden.</div>`}
       <div class="na" style="margin-top:6px">Exacte tarieven staan niet in OSM.</div>
     </div>`;
     if(m==='ev'){
       cards+=`<div class="tcard"><h4>⚡ Laadpunten</h4>${
         d.charging.length? d.charging.slice(0,4).map(c=>`<div style="margin-bottom:6px"><b>${esc(c.tags.name||c.tags.operator||'Laadpunt')}</b>
-          <div class="sub2">${c.tags.socket?Object.keys(c.tags).filter(k=>k.startsWith('socket')).length+' aansluitingen':'aansluiting n.b.'} · <a class="lk" href="${gmaps(c.lat,c.lon)}" target="_blank" rel="noopener">kaart →</a></div></div>`).join('')
+          <div class="sub2">${c.tags.socket?Object.keys(c.tags).filter(k=>k.startsWith('socket')).length+' aansluitingen':'aansluiting n.b.'}${c._dist!=null?` · 📍 ${distLabel(c._dist)}`:''} · <a class="lk" href="${gmaps(c.lat,c.lon)}" target="_blank" rel="noopener">kaart →</a></div></div>`).join('')
           :`<div class="na">Geen laadpunten gevonden in OSM.</div>`}
         <div class="na" style="margin-top:6px">Voor laadplanning onderweg: <a class="lk" style="display:inline" href="https://abetterrouteplanner.com" target="_blank" rel="noopener">A Better Routeplanner →</a></div>
       </div>`;
@@ -646,7 +708,7 @@ function travelHTML(d){
   } else if(m==='transit'){
     cards+=`<div class="tcard"><h4>🚋 OV-knooppunten bij bestemming</h4>${
       d.stops.length? d.stops.slice(0,5).map(s=>`<div style="margin-bottom:5px"><b>${esc(s.tags.name)}</b>
-        <div class="sub2">${(s.tags.railway||s.tags.station||s.tags.public_transport||'halte').replace('_',' ')}</div></div>`).join('')
+        <div class="sub2">${(s.tags.railway||s.tags.station||s.tags.public_transport||'halte').replace('_',' ')}${s._dist!=null?` · 📍 ${distLabel(s._dist)}`:''}</div></div>`).join('')
         :`<div class="na">Geen OV-knooppunten gevonden in de buurt.</div>`}</div>`;
     cards+=`<div class="tcard"><h4>🕐 Tijden & route</h4>
       <div class="sub2">Live OV-tijden, perrons en overstappen zitten niet in gratis open bronnen. Plan de exacte reis via de officiële planner:</div>
@@ -655,7 +717,7 @@ function travelHTML(d){
         ${d.dest.cc==='nl'?`<a class="btn" target="_blank" rel="noopener" href="https://9292.nl">9292 →</a>`:''}
       </div></div>`;
   } else { // bike / foot
-    const dist=d.dep?haversine(d.dep,d.dest):null;
+    const dist=d.dep?haversine(d.dep,d.anchor):null;
     const speed=m==='bike'?15:4.8;
     const mins=dist?Math.round(dist/speed*60):null;
     cards+=`<div class="tcard"><h4>${m==='bike'?'🚲 Fietsen':'🚶 Lopen'}</h4>
@@ -669,7 +731,8 @@ function travelHTML(d){
 }
 function transitDeeplink(d){
   const o=d.dep?`${d.dep.lat},${d.dep.lon}`:'';
-  const dd=`${d.dest.lat},${d.dest.lon}`;
+  const tgt=d.anchor||d.dest;
+  const dd=`${tgt.lat},${tgt.lon}`;
   const tm={car:'driving',ev:'driving',transit:'transit',bike:'bicycling',foot:'walking'}[d.mode];
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${dd}&travelmode=${tm}`;
 }
@@ -735,10 +798,10 @@ let _map=null;
 function initMap(d){
   const el=$('map'); if(!el||typeof L==='undefined') return;
   if(_map){_map.remove();_map=null;}
-  _map=L.map('map',{scrollWheelZoom:false}).setView([d.dest.lat,d.dest.lon],13);
+  _map=L.map('map',{scrollWheelZoom:false}).setView([d.anchor.lat,d.anchor.lon], d.tight?14:13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
   const ink='#bd4a26', teal='#1d6a5c';
-  L.circleMarker([d.dest.lat,d.dest.lon],{radius:9,color:'#f3e9da',weight:2,fillColor:'#bd4a26',fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.destText)+'</b>').openPopup();
+  L.circleMarker([d.anchor.lat,d.anchor.lon],{radius:9,color:'#f3e9da',weight:2,fillColor:'#bd4a26',fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b>').openPopup();
   d.attractions.slice(0,12).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:5,color:teal,fillColor:teal,fillOpacity:.7,weight:1}).addTo(_map).bindPopup(esc(e.tags.name)));
   d.eats.slice(0,8).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:ink,fillColor:ink,fillOpacity:.7,weight:1}).addTo(_map).bindPopup('🍽️ '+esc(e.tags.name)));
   (d.parking||[]).slice(0,6).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:'#444',fillColor:'#888',fillOpacity:.6,weight:1}).addTo(_map).bindPopup('🅿️ '+esc(e.tags.name||'Parkeren')));

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v1.4.2 — klaar voor je citytrip</title>
-<meta name="description" content="Reiskompas v1.4.2: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
+<title>Reiskompas v1.5.0 — klaar voor je citytrip</title>
+<meta name="description" content="Reiskompas v1.5.0: bereid je stadsbezoek voor met gratis, openbare bronnen. Weer, bezienswaardigheden, eten & drinken, route, parkeren en slimme favorieten." />
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -323,7 +323,7 @@ input[type=time]::-webkit-calendar-picker-indicator{
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.4.2</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v1.5.0</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -343,6 +343,12 @@ input[type=time]::-webkit-calendar-picker-indicator{
           <input type="text" id="dest" placeholder="bijv. Barcelona, Orlando, Delft…" autocomplete="off" />
           <div class="ac-list" id="dest-ac"></div>
         </div>
+      </div>
+
+      <div class="field" id="area-field">
+        <label class="lbl" for="area">Buurt / gebied (optioneel)</label>
+        <select id="area"><option value="">Hele stad (centrum)</option></select>
+        <div class="hint" id="area-hint">Vult zich nadat je een bestemming kiest — handig in grote steden.</div>
       </div>
 
       <div class="row2">
