@@ -1,66 +1,35 @@
-# Reiskompas v1.1
+# Reiskompas v1.3
 
-Reiskompas is een kleine, client-side HTML/PWA om een bezoek aan een stad voor te bereiden met openbare bronnen.
+Client-side HTML/PWA voor het voorbereiden van een stadsbezoek met openbare bronnen.
 
-## Wat doet de app?
+## Belangrijkste functies
 
-De gebruiker vult bestemming, vertrekpunt, datum, gezelschap, interesses, eten/drinken en vervoerswijze in. De app maakt daarna een compact reisdossier met:
+- Weer via Open-Meteo, inclusief climatologie-fallback voor latere datums.
+- Bezienswaardigheden, restaurants, parkeren, laadpunten en OV-knooppunten via OpenStreetMap/Overpass.
+- Overpass failover over meerdere publieke endpoints.
+- LocalStorage-cache om herhaalde API-calls te beperken.
+- Favorieten.
+- Kindvriendelijke ranking.
+- Sectie “Niet iedereen kent deze”.
+- Dagplanning met ICS-export.
+- Printbare reisdossierweergave.
+- PWA-installatie met manifest en service worker.
 
-- verwachte weersomstandigheden of klimaatindicatie;
-- bezienswaardigheden en activiteiten uit OpenStreetMap;
-- eet- en drinkgelegenheden;
-- auto-/EV-/OV-/fiets-/loopadvies;
-- parkeermogelijkheden en laadpunten waar beschikbaar;
-- kaartweergave;
-- indicatieve dagplanning;
-- agenda-export als `.ics`;
-- printbare reisdossierweergave.
+## Bestanden
 
-## Openbare bronnen
+- `index.html` — schone HTML-shell, styling en layout.
+- `app.js` — alle applicatielogica.
+- `manifest.webmanifest` — PWA metadata.
+- `sw.js` — service worker voor app-shell caching.
+- `icon-180.png`, `icon-192.png`, `icon-512.png` — app-iconen.
+- `README.md`
+- `CHANGELOG.md`
 
-- Photon / Nominatim voor geocoding;
-- Open-Meteo voor weer en historische klimaatdata;
-- OpenStreetMap / Overpass voor POI's;
-- OSRM demo-routing voor indicatieve autoroutes;
-- Leaflet + OpenStreetMap tiles voor de kaart.
+## v1.3 QA-fix
 
-## v1.1 verbeteringen
+Deze versie verwijdert de hybride situatie uit v1.2 waarbij er zowel een groot inline script als een extern `app.js` aanwezig waren. Vanaf v1.3 staat alle applicatielogica in `app.js`.
 
-- Overpass failover naar meerdere openbare endpoints;
-- lokale cache via `localStorage` voor weer/Overpass-resultaten;
-- bronstatus-badges;
-- betere kind-/gezinsranking;
-- extra kindvriendelijke POI-categorie;
-- “Niet iedereen kent deze”-blok voor kleinere vondsten;
-- favorieten met lokale opslag;
-- printknop voor het reisdossier;
-- iOS-installprompt;
-- manifest, service worker en iconen toegevoegd.
+## Gebruik
 
-## Installatie
+Upload alle bestanden samen naar dezelfde map, bijvoorbeeld op GitHub Pages. Open daarna `index.html`.
 
-Plaats alle bestanden in dezelfde map en publiceer ze bijvoorbeeld via GitHub Pages:
-
-```text
-index.html
-manifest.webmanifest
-sw.js
-icon-180.png
-icon-192.png
-icon-512.png
-README.md
-CHANGELOG.md
-```
-
-Er is geen buildproces, backend, npm-installatie of API-key nodig.
-
-## Belangrijke beperkingen
-
-- Openbare API's kunnen tijdelijk traag of onbereikbaar zijn.
-- Overpass-data is afhankelijk van de kwaliteit van OpenStreetMap-tags.
-- Exacte prijzen, live verkeersinformatie, parkeerbezetting en live OV-tijden zitten niet betrouwbaar in deze keyless setup.
-- OSRM demo-routing is indicatief en niet bedoeld als productie-SLA.
-
-## Privacy
-
-De app draait client-side. Favorieten en cache worden lokaal in de browser opgeslagen.
