@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Klaar voor je citytrip met robuuste getypte bestemmingen",
+  "description": "Klaar voor je citytrip met robuuste init, geocoding en buurtinvoer",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -28,5 +28,5 @@
       "purpose": "maskable"
     }
   ],
-  "version": "1.9.8"
+  "version": "1.9.10"
 }

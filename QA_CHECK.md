@@ -1,9 +1,9 @@
-# QA-check v1.9.8
+# QA-check v1.9.10
 
-- app_version_v1_9_8: True
-- sw_cache_v1_9_8: True
-- typed_resolver: True
-- enter_blur_resolve: True
-- curacao_coords: True
-- area_load_after_resolve: True
+- app_version_v1_9_10: True
+- sw_cache_v1_9_10: True
+- sweepOldCaches_defined: True
+- setupAreaCustom_no_key_bug: True
+- resolveCustomArea: True
+- geocoder_hint: True
 - app_js_syntax_ok: True

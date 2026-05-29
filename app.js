@@ -7,8 +7,12 @@
    ========================================================================= */
 
 const $ = id => document.getElementById(id);
+function setFieldHint(id, msg){
+  const el=$(id);
+  if(el && msg) el.textContent=msg;
+}
 
-const APP_VERSION = '1.9.8';
+const APP_VERSION = '1.9.10';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -34,6 +38,16 @@ function cacheSet(type, parts, val){
   try{ localStorage.setItem(cacheKey(type, parts), JSON.stringify({t:Date.now(), v:val})); }catch(e){}
 }
 function loadFavorites(){ return []; }
+function sweepOldCaches(){
+  try{
+    const kill=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && k.startsWith('reiskompas-cache-') && !k.startsWith(CACHE_PREFIX)) kill.push(k);
+    }
+    kill.forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+}
 function saveFavorites(){ /* selectie blijft alleen in deze browser-sessie */ }
 function migrateFavorites(){ /* v1.9.3: oude permanente tripselecties bewust niet migreren */ }
 function favId(e){ return e && e.id ? e.id : ((e?.tags?.name||'')+'@'+Math.round((e?.lat||0)*10000)+','+Math.round((e?.lon||0)*10000)); }
@@ -126,6 +140,7 @@ const state = {
 /* ---------- build chips ---------- */
 function buildChips(){
   const ic = $('interests');
+  if(!ic) return;
   INTERESTS.forEach(it=>{
     const c=document.createElement('span');
     c.className='chip'; c.dataset.v=it.id;
@@ -134,6 +149,7 @@ function buildChips(){
     ic.appendChild(c);
   });
   const cc=$('cuisines');
+  if(!cc) return;
   CUISINES.forEach(cu=>{
     const c=document.createElement('span');
     c.className='chip'; c.dataset.v=cu.label; c.textContent=cu.label;
@@ -141,7 +157,7 @@ function buildChips(){
     cc.appendChild(c);
   });
   // companions
-  $('companions').querySelectorAll('.chip').forEach(c=>{
+  if($('companions')) $('companions').querySelectorAll('.chip').forEach(c=>{
     if(state.companions.has(c.dataset.v)) c.classList.add('on');
     c.onclick=()=>{ c.classList.toggle('on'); toggleSet(state.companions,c.dataset.v,c); };
   });
@@ -165,7 +181,7 @@ function buildChips(){
       else { state.drink=on; $('drink-wrap').classList.toggle('hidden',!on); }
     };
   });
-  $('nodrink-chip').onclick=function(){
+  if($('nodrink-chip')) $('nodrink-chip').onclick=function(){
     const on=this.dataset.on!=='true'; this.dataset.on=on;
     this.classList.toggle('on',on); state.noAlcohol=on;
   };
@@ -198,7 +214,10 @@ async function resolveTypedInput(key, opts={}){
   if(state[key]) return state[key];
 
   const place = await resolveCity(txt);
-  if(!place) return null;
+  if(!place){
+    if(key==='dest') setFieldHint('area-hint','Bestemming nog niet herkend. Kies eventueel een suggestie of druk Enter na het typen.');
+    return null;
+  }
   state[key]=place;
   inp.value=formatPlaceInput(place, txt);
 
@@ -208,7 +227,7 @@ async function resolveTypedInput(key, opts={}){
   }
   return place;
 }
-function scheduleTypedResolve(key, delay=650){
+function scheduleTypedResolve(key, delay=350){
   const timerKey = key==='dest' ? '_destResolveTimer' : '_depResolveTimer';
   clearTimeout(state[timerKey]);
   state[timerKey]=setTimeout(()=>resolveTypedInput(key).catch(()=>{}), delay);
@@ -216,6 +235,7 @@ function scheduleTypedResolve(key, delay=650){
 
 function setupAutocomplete(inputId,listId,key){
   const inp=$(inputId), list=$(listId);
+  if(!inp || !list) return;
   let timer=null;
   inp.addEventListener('input',()=>{
     state[key]=null;
@@ -247,14 +267,28 @@ function setupAutocomplete(inputId,listId,key){
           list.appendChild(it);
         });
         list.classList.toggle('open',(d.features||[]).length>0);
-      }catch(e){ list.classList.remove('open'); }
+      }catch(e){ list.classList.remove('open'); if(key==='dest') setFieldHint('area-hint','Autocomplete kon niet laden. Druk Enter of klik Genereer; Reiskompas probeert de stad alsnog te herkennen.'); }
     },260);
   });
-  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveTypedInput(key).catch(()=>{}), 120); });
+  async function resolveCustomArea(){
+    const q=inp.value.trim();
+    if(q.length<2 || !state.dest) return null;
+    const area = await resolveAreaText(q, state.dest);
+    if(area){
+      state.area=area;
+      inp.value=area.name;
+      if(sel) sel.value='';
+      setFieldHint('area-hint',`Focus op ${area.name}.`);
+    }else{
+      setFieldHint('area-hint','Gebied niet herkend; probeer bijvoorbeeld Centrum, Binnenstad of een wijknaam.');
+    }
+    return area;
+  }
+  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveCustomArea().catch(()=>{}), 120); });
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
       e.preventDefault();
-      resolveTypedInput(key).catch(()=>{});
+      resolveCustomArea().catch(()=>{});
       list.classList.remove('open');
     }
   });
@@ -380,6 +414,20 @@ async function loadAreasFor(city){
     ? `${areas.length} buurten/gebieden gevonden — of typ zelf, bijv. Centrum, Punda of Binnenstad.`
     : 'Geen aparte buurten gevonden; typ eventueel zelf een focusgebied.';
 }
+
+async function resolveAreaText(q, city){
+  try{
+    const full=`${q}, ${city.name} ${city.country||''}`;
+    const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(full)}&limit=1&lang=en&lat=${city.lat}&lon=${city.lon}`);
+    const d=await r.json();
+    const f=(d.features||[])[0];
+    if(!f) return null;
+    const p=f.properties||{};
+    const name=p.name||p.city||q;
+    return {name, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], dist:haversine(city,{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}), custom:true};
+  }catch(e){ return null; }
+}
+
 function setupAreaCustom(){
   const inp=$('area-custom'), list=$('area-custom-ac'), sel=$('area');
   if(!inp || !list) return;
@@ -414,11 +462,25 @@ function setupAreaCustom(){
       }catch(e){ list.classList.remove('open'); }
     },260);
   });
-  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveTypedInput(key).catch(()=>{}), 120); });
+  async function resolveCustomArea(){
+    const q=inp.value.trim();
+    if(q.length<2 || !state.dest) return null;
+    const area = await resolveAreaText(q, state.dest);
+    if(area){
+      state.area=area;
+      inp.value=area.name;
+      if(sel) sel.value='';
+      setFieldHint('area-hint',`Focus op ${area.name}.`);
+    }else{
+      setFieldHint('area-hint','Gebied niet herkend; probeer bijvoorbeeld Centrum, Binnenstad of een wijknaam.');
+    }
+    return area;
+  }
+  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveCustomArea().catch(()=>{}), 120); });
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
       e.preventDefault();
-      resolveTypedInput(key).catch(()=>{});
+      resolveCustomArea().catch(()=>{});
       list.classList.remove('open');
     }
   });
@@ -700,7 +762,7 @@ async function generate(){
   const cleanDepText = dep ? displayPlaceName(dep,depText) : depText;
   if(!dest){ setStatus(''); $('loading').classList.remove('on'); $('empty').style.display='block';
     alert('Bestemming niet gevonden — kies een suggestie uit de lijst of probeer een andere spelling.'); return; }
-  if(!state.dest){ state.dest=dest; loadAreasFor(dest); }
+  if(!state.dest){ state.dest=dest; const di=$('dest'); if(di) di.value=formatPlaceInput(dest,destText); loadAreasFor(dest); }
   if(dep && !state.dep) state.dep=dep;
 
   const city = dest;                                 // stadcentrum (weer + route-doel als geen buurt)
@@ -1444,23 +1506,47 @@ function setupInstallPrompt(){
 }
 
 /* ---------- init ---------- */
-window.addEventListener('DOMContentLoaded',()=>{
-  sweepOldCaches();
-  migrateFavorites();
-  buildChips();
-  setupAutocomplete('dest','dest-ac','dest');
-  setupAutocomplete('dep','dep-ac','dep');
-  setupAreaCustom();
-  const t=new Date(); t.setDate(t.getDate()+1);
-  $('date').value=t.toISOString().split('T')[0];
-  $('go').addEventListener('click',generate);
+let __rkDidInit = false;
+function initReiskompas(){
+  if(__rkDidInit) return;
+  __rkDidInit = true;
+
+  try{ sweepOldCaches(); }catch(e){ console.warn('cache sweep failed', e); }
+  try{ migrateFavorites(); }catch(e){ console.warn('favorite migration skipped', e); }
+
+  try{ buildChips(); }catch(e){ console.error('buildChips failed', e); }
+
+  try{ setupAutocomplete('dest','dest-ac','dest'); }catch(e){ console.error('dest autocomplete failed', e); }
+  try{ setupAutocomplete('dep','dep-ac','dep'); }catch(e){ console.error('dep autocomplete failed', e); }
+  try{ setupAreaCustom(); }catch(e){ console.error('area custom failed', e); }
+
+  const dateEl=$('date');
+  if(dateEl && !dateEl.value){
+    const t=new Date(); t.setDate(t.getDate()+1);
+    dateEl.value=t.toISOString().split('T')[0];
+  }
+
+  const go=$('go');
+  if(go) go.addEventListener('click',generate);
+
   // tripselecties via event-delegation — werkt ook voor namen met een apostrof (O'Briens, L'Escale)
   document.addEventListener('click',ev=>{
     const btn = ev.target.closest && ev.target.closest('.fav-btn');
     if(btn){ ev.preventDefault(); toggleFavorite(btn); }
   });
-  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 
-  setupInstallPrompt();
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
 
-});
+  try{ setupInstallPrompt(); }catch(e){}
+}
+
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', initReiskompas, {once:true});
+}else{
+  initReiskompas();
+}
+
+// Extra vangnet voor iOS/PWA/Safari-cache edge cases.
+window.addEventListener('load', initReiskompas, {once:true});

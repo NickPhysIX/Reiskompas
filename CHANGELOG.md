@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.9.10
+
+Hotfix op v1.9.9.
+
+- Ontbrekende `sweepOldCaches()` hersteld zodat de init niet afhankelijk is van try/catch rond een ontbrekende functie.
+- `setupAreaCustom()` gerepareerd: de niet-bestaande `key`-variabele is verwijderd.
+- Handmatige buurtinvoer gebruikt nu een eigen `resolveCustomArea()` flow.
+- Autocomplete/geocoder-fouten tonen nu een gebruikershint in de buurt-hintregel.
+- Getypte bestemming wordt bij genereren genormaliseerd teruggeschreven naar het invoerveld.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.10.
+
+## v1.9.9
+
+Hotfix voor live/iOS initialisatie.
+
+- Robuuste, idempotente `initReiskompas()` toegevoegd.
+- Init draait nu zowel via `DOMContentLoaded`, direct wanneer het DOM al geladen is, als via een extra `load`-vangnet.
+- `app.js` krijgt `defer` in `index.html`.
+- Formulierbindings zijn toleranter gemaakt, zodat één mislukte binding niet de rest van de interface blokkeert.
+- Getypte bestemmingen worden sneller automatisch resolved.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v1.9.9.
+
 ## v1.9.8
 
 Bugfix-release voor bestemmingsinvoer.
