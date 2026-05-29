@@ -8,7 +8,7 @@
 
 const $ = id => document.getElementById(id);
 
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.9.1';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const FAV_KEY = 'reiskompas-favorites';            // de-versioned: favorieten blijven over releases heen
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
@@ -463,7 +463,7 @@ function escAttr(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 /* ---------- routing (OSRM, auto) ---------- */
 async function osrmRoute(o,d){
   try{
-    const u=`https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=false&steps=true`;
+    const u=`https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=full&geometries=polyline&steps=true`;
     const r=await(await fetch(u)).json();
     if(!r.routes||!r.routes.length) return null;
     const rt=r.routes[0];
@@ -471,8 +471,23 @@ async function osrmRoute(o,d){
     (rt.legs||[]).forEach(l=>(l.steps||[]).forEach(s=>{
       if(s.ref) s.ref.split(';').forEach(x=>{ x=x.trim(); if(x&&!refs.includes(x))refs.push(x); });
     }));
-    return {km:(rt.distance/1000).toFixed(0),min:Math.round(rt.duration/60),roads:refs.slice(0,8)};
+    return {km:(rt.distance/1000).toFixed(0),min:Math.round(rt.duration/60),roads:refs.slice(0,8),
+            geometry: rt.geometry ? decodePolyline(rt.geometry) : null};
   }catch(e){ return null; }
+}
+// OSRM 'polyline' = Google encoded polyline, precisie 5 → array van [lat,lon]
+function decodePolyline(str, precision=5){
+  let index=0, lat=0, lng=0; const coords=[]; const factor=Math.pow(10,precision);
+  while(index<str.length){
+    let result=0, shift=0, b;
+    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+    lat += (result&1)?~(result>>1):(result>>1);
+    result=0; shift=0;
+    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+    lng += (result&1)?~(result>>1):(result>>1);
+    coords.push([lat/factor, lng/factor]);
+  }
+  return coords;
 }
 function haversine(a,b){
   const R=6371,toR=x=>x*Math.PI/180;
@@ -703,12 +718,12 @@ function renderAll(d){
   sec('sec-travel', travelTitle(d.mode),'⑤', travelHTML(d), '');
   sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
 
-  // plan
-  const plan=buildPlan(d);
-  sec('sec-plan','Dagplanning','⑥', planHTML(plan,d), '');
-  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d,plan), 'optioneel');
-  window.__plan={plan,date:d.date,dest:d.destText};
-  window.__dossier={...d, plan};
+  // route
+  const routePlan=buildRoutePlan(d);
+  sec('sec-plan','Logische route','⑥', routeHTML(routePlan,d), routePlan.points.length?`${routePlan.points.length} stops`:'optioneel');
+  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d,routePlan), 'optioneel');
+  window.__routePlan={routePlan,date:d.date,dest:d.destText};
+  window.__dossier={...d, routePlan};
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
@@ -888,7 +903,10 @@ function travelHTML(d){
     </div>`;
     cards+=`<div class="tcard"><h4>💡 Tip</h4><div class="sub2">${m==='bike'?'Veel steden hebben deelfietsen of OV-fiets bij stations. Check de lokale aanbieder.':'Comfortabele schoenen en een waterflesje. Plan pauzes als je kinderen meeneemt.'}</div></div>`;
   }
-  return `<div class="travel-grid">${cards}</div><div id="map"></div>`;
+  const mapCap = (d.route && d.route.geometry)
+    ? `<div class="na" style="margin:10px 0 4px">🗺️ De rode lijn toont de rijroute van ${esc(d.depText||'je vertrekpunt')} naar ${esc(d.anchorName||d.destText)} (via OSRM). Stippen zijn bezienswaardigheden, eten en parkeren.</div>`
+    : `<div class="na" style="margin:10px 0 4px">🗺️ Stippen tonen bezienswaardigheden, eten en parkeren rond ${esc(d.anchorName||d.destText)}.</div>`;
+  return `<div class="travel-grid">${cards}</div>${mapCap}<div id="map"></div>`;
 }
 function transitDeeplink(d){
   const o=d.dep?`${d.dep.lat},${d.dep.lon}`:'';
@@ -898,44 +916,118 @@ function transitDeeplink(d){
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${dd}&travelmode=${tm}`;
 }
 
-/* ---------- itinerary ---------- */
-function buildPlan(d){
-  const items=[];
-  let [h,m]=d.time.split(':').map(Number);
-  let cur=h*60+(m||0);
-  const push=(label,dur,place)=>{ items.push({t:cur,label,place}); cur+=dur; };
-  const kids=d.kids!=='none';
-  const act=d.attractions.slice(0,kids?2:3);
-  const eat=d.eats, drink=d.drinks;
-
-  push('Aankomst in '+d.destText, 20);
-  if(state.eat && cur<11*60) push('Ontbijt / koffie', 45, drink.find(x=>x.tags.amenity==='cafe')?.tags.name);
-  if(act[0]) push(act[0].tags.name, kids?75:90, act[0].tags.name);
-  if(state.eat) push('Lunch', 60, eat[0]?.tags.name);
-  if(act[1]) push(act[1].tags.name, kids?75:90, act[1].tags.name);
-  if(kids) push('Pauze in een park / ijsje', 40);
-  if(act[2]) push(act[2].tags.name, 75, act[2].tags.name);
-  if(state.eat) push('Diner', 90, eat[1]?.tags.name||eat[0]?.tags.name);
-  if(state.drink) push(state.noAlcohol?'Afsluiter — mocktail / koffie':(state.companions.has('Vrienden')?'Borrel met vrienden':'Borrel'), 60, drink[0]?.tags.name);
-  push('Vertrek / terugreis', 0);
-  return items;
+/* ---------- route proposal ---------- */
+function poiName(e){ return e?.tags?.name || e?.name || 'Onbekende plek'; }
+function poiTag(e){ return e?.tag || (e?.tags ? catLabel(e) : 'plek'); }
+function poiAddress(e){ return e?.address || (e?.tags ? addr(e.tags) : '') || ''; }
+function normalizeRoutePoint(e, role='stop'){
+  if(!e) return null;
+  return {
+    id: favId(e),
+    name: poiName(e),
+    tag: poiTag(e),
+    lat: Number(e.lat),
+    lon: Number(e.lon),
+    address: poiAddress(e),
+    role
+  };
 }
-function fmt(min){const h=Math.floor(min/60)%24,m=min%60;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
-function planHTML(items,d){
-  const rows=items.map(it=>`<div class="tl"><div class="tm">${fmt(it.t)}</div><div class="ti">${esc(it.label)}</div>${it.place&&it.place!==it.label?`<div class="tp">${esc(it.place)}</div>`:''}</div>`).join('');
-  return `<details class="plan-details">
-    <summary>Toon indicatieve dagplanning</summary>
-    <div class="timeline">${rows}</div>
-    <div class="actions">
-      <button class="btn solid" onclick="downloadICS()">📅 Exporteer naar agenda (.ics)</button>
-      <a class="btn" target="_blank" rel="noopener" href="${transitDeeplink(d)}">🗺️ Route in Maps</a>
+function pointDistance(a,b){
+  if(!a || !b || !isFinite(a.lat) || !isFinite(a.lon) || !isFinite(b.lat) || !isFinite(b.lon)) return null;
+  return haversine(a,b);
+}
+function uniqueRoutePoints(points){
+  const seen=new Set(), out=[];
+  for(const p of points){
+    if(!p || !isFinite(p.lat) || !isFinite(p.lon)) continue;
+    const k=(p.id||p.name+'@'+Math.round(p.lat*10000)+','+Math.round(p.lon*10000)).toLowerCase();
+    if(seen.has(k)) continue;
+    seen.add(k); out.push(p);
+  }
+  return out;
+}
+function routeCandidates(d){
+  const favs = favorites.map(f=>normalizeRoutePoint(f,'favoriet')).filter(Boolean);
+  if(favs.length) return uniqueRoutePoints(favs).slice(0,8);
+
+  const picks=[];
+  (d.attractions||[]).slice(0,4).forEach(e=>picks.push(normalizeRoutePoint(e,'bezienswaardigheid')));
+  if(state.eat && d.eats?.[0]) picks.push(normalizeRoutePoint(d.eats[0],'eten'));
+  if(state.drink && d.drinks?.[0]) picks.push(normalizeRoutePoint(d.drinks[0], state.noAlcohol?'koffie/mocktail':'drinken'));
+  return uniqueRoutePoints(picks).slice(0,7);
+}
+function routeStartPoint(d){
+  if((d.mode==='car'||d.mode==='ev') && d.parking?.[0]) return normalizeRoutePoint(d.parking[0],'start/parkeren');
+  if(d.mode==='transit' && d.stops?.[0]) return normalizeRoutePoint(d.stops[0],'start/OV');
+  if(d.dep) return {name:d.depText||'Vertrekpunt', tag:'start', lat:d.dep.lat, lon:d.dep.lon, address:''};
+  return {name:d.anchorName||d.destText, tag:'start/focusgebied', lat:d.anchor.lat, lon:d.anchor.lon, address:''};
+}
+function greedyOrder(start, candidates){
+  const remaining=[...candidates], ordered=[];
+  let cur=start;
+  while(remaining.length){
+    let bestIx=-1, best=Infinity;
+    remaining.forEach((p,i)=>{
+      const d=pointDistance(cur,p);
+      if(d!=null && d<best){ best=d; bestIx=i; }
+    });
+    if(bestIx<0) bestIx=0;           // geen meetbare afstand → neem de eerstvolgende i.p.v. vastlopen
+    const next=remaining.splice(bestIx,1)[0];
+    ordered.push(next);
+    if(isFinite(next.lat)&&isFinite(next.lon)) cur=next;  // anker alleen verzetten bij geldige coördinaat
+  }
+  return ordered;
+}
+function buildRoutePlan(d){
+  const start=routeStartPoint(d);
+  const candidates=routeCandidates(d);
+  const ordered=greedyOrder(start,candidates);
+  const back = (d.mode==='car'||d.mode==='ev') && start ? start : null;
+  const points=[start,...ordered];
+  if(back && ordered.length) points.push({...back, role:'terug naar start'});
+  let total=0, hops=[];
+  for(let i=0;i<points.length-1;i++){
+    const km=pointDistance(points[i],points[i+1]);
+    if(km!=null){ total+=km; hops.push(km); } else hops.push(null);
+  }
+  return {start, stops:ordered, points, hops, totalKm:total, usesFavorites:favorites.length>0};
+}
+function routeMapsLink(routePlan,d){
+  const pts=routePlan.points||[];
+  if(pts.length<2) return transitDeeplink(d);
+  const origin=`${pts[0].lat},${pts[0].lon}`;
+  const destination=`${pts[pts.length-1].lat},${pts[pts.length-1].lon}`;
+  const waypoints=pts.slice(1,-1).slice(0,7).map(p=>`${p.lat},${p.lon}`).join('|');
+  const mode=(d.mode==='car'||d.mode==='ev')?'driving':d.mode==='bike'?'bicycling':'walking';
+  return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=${mode}${waypoints?`&waypoints=${encodeURIComponent(waypoints)}`:''}`;
+}
+function routeHTML(routePlan,d){
+  if(!routePlan.points.length || routePlan.points.length<2){
+    return `<div class="note">Kies een paar favorieten met ☆ of gebruik de voorgestelde bezienswaardigheden. Daarna kan Reiskompas een logische volgorde voorstellen.</div>`;
+  }
+  const modeLabel=(d.mode==='car'||d.mode==='ev')?'route':'looproute';
+  const intro=routePlan.usesFavorites
+    ? 'Gebaseerd op je favorieten.'
+    : 'Gebaseerd op de hoogst gerankte plekken omdat er nog geen favorieten zijn gekozen.';
+  const rows=routePlan.points.map((p,i)=>{
+    const hop = i<routePlan.hops.length && routePlan.hops[i]!=null
+      ? `<div class="route-hop">↓ ${distLabel(routePlan.hops[i])} naar de volgende stop</div>` : '';
+    return `<div class="route-step">
+      <div class="route-num">${i+1}</div>
+      <div><div class="name">${esc(p.name)}</div>
+      <div class="meta">${esc(p.tag||'plek')}${p.address?` · ${esc(p.address)}`:''}</div></div>
+    </div>${hop}`;
+  }).join('');
+  return `<div class="note route-summary"><b>Geen strak tijdschema.</b> Dit is een praktische ${modeLabel}: ${intro} Totale indicatieve afstand: <b>${distLabel(routePlan.totalKm)}</b>.</div>
+    <div class="route-list">${rows}</div>
+    <div class="actions" style="margin-top:12px">
+      <a class="btn solid" target="_blank" rel="noopener" href="${routeMapsLink(routePlan,d)}">🗺️ Open route in Maps</a>
       <button class="btn" onclick="window.print()" type="button">🖨️ Print reisdossier</button>
       <button class="btn" onclick="scrollToAIPrompt()" type="button">✨ AI-adviesprompt</button>
     </div>
-  </details>
-  ${favorites.length?`<div class="note" style="margin-top:11px"><b>⭐ Favorieten:</b> ${favorites.slice(0,8).map(f=>esc(f.name)).join(' · ')}</div>`:''}
-  <div class="na" style="margin-top:8px">Optioneel schema op basis van interesses en aankomsttijd — vooral bedoeld als ruwe houvast.</div>`;
+    <div class="na" style="margin-top:8px">Afstanden zijn hemelsbreed/indicatief. Maps bepaalt de echte loop- of rijroute.</div>`;
 }
+function fmt(min){const h=Math.floor(min/60)%24,m=min%60;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
 
 function summarizePois(arr, n=8){
   return (arr||[]).slice(0,n).map((e,i)=>{
@@ -948,13 +1040,13 @@ function summarizePois(arr, n=8){
     return bits.join(' — ');
   }).join('\n');
 }
-function buildAIPrompt(d, plan){
+function buildAIPrompt(d, routePlan){
   const companions=[...state.companions].join(', ') || 'niet opgegeven';
   const interests=INTERESTS.filter(i=>state.interests.has(i.id)).map(i=>i.label).join(', ') || 'algemene citytrip';
   const cuisines=[...state.cuisines].join(', ') || 'geen specifieke keuken';
   const weather=d.weather ? `${d.weather.max}°/${d.weather.min}°, ${wlabel(d.weather.code)[0]}, ${d.weather.precip!=null ? (d.weather.kind==='fc'?'neerslagkans ':'natte dagen ~')+d.weather.precip+'%' : 'neerslag onbekend'}` : 'geen weerdata';
   const area=d.anchorName || d.destText;
-  const planTxt=(plan||[]).map(p=>`- ${fmt(p.t)} ${p.label}${p.place&&p.place!==p.label?' ('+p.place+')':''}`).join('\n');
+  const routeTxt=(routePlan?.points||[]).map((p,i)=>`- ${i+1}. ${p.name}${p.tag?' ('+p.tag+')':''}${p.address?' — '+p.address:''}`).join('\n');
   const favTxt=favorites.length ? favorites.slice(0,10).map((f,i)=>`${i+1}. ${f.name}`).join('\n') : 'Geen favorieten geselecteerd.';
   return `Ik gebruik een kleine open-data reisplanner (“Reiskompas”) en wil graag dat je als praktische reisadviseur meekijkt.
 
@@ -994,10 +1086,10 @@ ${summarizePois(d.drinks,8) || 'Geen drinkresultaten of drinken niet geselecteer
 Favorieten:
 ${favTxt}
 
-Indicatieve planning uit Reiskompas:
-${planTxt}
+Logische routevolgorde uit Reiskompas:
+${routeTxt || 'Nog geen routevolgorde beschikbaar.'}
 
-Maak hiervan een praktisch, menselijk dagadvies. Controleer in je advies ook expliciet mogelijke wegwerkzaamheden, spoorstoringen, evenementen of andere bereikbaarheidshinder voor deze datum/route, en zeg waar ik dat vlak voor vertrek moet verifiëren. 
+Maak hiervan een praktisch, menselijk routeadvies zonder strak tijdschema. Controleer in je advies ook expliciet mogelijke wegwerkzaamheden, spoorstoringen, evenementen of andere bereikbaarheidshinder voor deze datum/route, en zeg waar ik dat vlak voor vertrek moet verifiëren. 
 Houd rekening met:
 - logische volgorde en reistijd tussen plekken;
 - weer;
@@ -1007,11 +1099,11 @@ Houd rekening met:
 - niet te vol plannen.
 
 Geef:
-1. Een rustige variant.
-2. Een normale variant.
-3. Een volle variant.
-4. Twee dingen die je zou schrappen als de dag tegenvalt.
-5. Eventuele waarschuwingen over openingstijden, reserveren of afstanden.
+1. Een logische volgorde van stops.
+2. Welke stops dicht bij elkaar liggen.
+3. Een kortere variant als de dag tegenvalt.
+4. Een alternatief bij slecht weer.
+5. Eventuele waarschuwingen over openingstijden, reserveren, afstanden of verstoringen.
 
 Gebruik alleen de informatie hierboven als basis. Zeg expliciet waar iets onzeker is.`;
 }
@@ -1075,11 +1167,29 @@ function initMap(d){
   if(_map){_map.remove();_map=null;}
   _map=L.map('map',{scrollWheelZoom:false}).setView([d.anchor.lat,d.anchor.lon], d.tight?14:13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
-  const ink='#bd4a26', teal='#1d6a5c';
-  L.circleMarker([d.anchor.lat,d.anchor.lon],{radius:9,color:'#f3e9da',weight:2,fillColor:'#bd4a26',fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b>').openPopup();
+  const rust='#bd4a26', teal='#1d6a5c', cream='#f3e9da';
+
+  // route-lijn (auto/EV) — rust over de kaart, met een crème 'casing' eronder voor contrast
+  const geo = d.route && d.route.geometry;
+  let routeLayer=null;
+  if(geo && geo.length>1){
+    L.polyline(geo,{color:cream,weight:8,opacity:.9,lineJoin:'round'}).addTo(_map);
+    routeLayer=L.polyline(geo,{color:rust,weight:4,opacity:1,lineJoin:'round'}).addTo(_map);
+  }
+
+  // bestemming/anker
+  L.circleMarker([d.anchor.lat,d.anchor.lon],{radius:9,color:cream,weight:2,fillColor:rust,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b>').openPopup();
+  // vertrekpunt (als bekend en route getekend)
+  if(d.dep && geo) L.circleMarker([d.dep.lat,d.dep.lon],{radius:8,color:cream,weight:2,fillColor:teal,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.depText||'Vertrek')+'</b>');
+
   d.attractions.slice(0,12).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:5,color:teal,fillColor:teal,fillOpacity:.7,weight:1}).addTo(_map).bindPopup(esc(e.tags.name)));
-  d.eats.slice(0,8).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:ink,fillColor:ink,fillOpacity:.7,weight:1}).addTo(_map).bindPopup('🍽️ '+esc(e.tags.name)));
+  d.eats.slice(0,8).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:rust,fillColor:rust,fillOpacity:.7,weight:1}).addTo(_map).bindPopup('🍽️ '+esc(e.tags.name)));
   (d.parking||[]).slice(0,6).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:'#444',fillColor:'#888',fillOpacity:.6,weight:1}).addTo(_map).bindPopup('🅿️ '+esc(e.tags.name||'Parkeren')));
+
+  // toon de hele reis als er een route is, anders blijf op de bestemming
+  if(routeLayer){
+    try{ _map.fitBounds(routeLayer.getBounds().pad(0.12)); }catch(e){}
+  }
   setTimeout(()=>_map.invalidateSize(),200);
 }
 

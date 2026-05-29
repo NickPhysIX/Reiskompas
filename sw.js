@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reiskompas-v1-7-static';
+const CACHE_NAME = 'reiskompas-v1-9-1-static';
 
 // Same-origin app-shell — moet volledig slagen, anders installeert de SW niet.
 const APP_SHELL = [

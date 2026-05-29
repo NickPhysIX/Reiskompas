@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Klaar voor je citytrip met openbare bronnen, buurtfocus en bereikbaarheid/verstoringen",
+  "description": "Klaar voor je citytrip met openbare bronnen, buurtfocus, logische routes en routeweergave op kaart",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -28,5 +28,5 @@
       "purpose": "maskable"
     }
   ],
-  "version": "1.7"
+  "version": "1.9.1"
 }

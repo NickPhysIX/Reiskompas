@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.9.1
+
+Housekeeping-release op basis van Claude’s v1.9.
+
+- README opgeschoond en teruggebracht tot huidige productbeschrijving.
+- Verouderde verwijzingen naar dagplanning en ICS-export verwijderd.
+- Terminologie gelijkgetrokken: **Logische route** in plaats van dagplanning.
+- Versies, manifestmetadata en service-worker cache bijgewerkt naar v1.9.1.
+- CHANGELOG blijft de plaats voor historische release-informatie.
+
+## v1.9
+
+Route op de kaart + route-fixes.
+
+- **Rijroute als lijn op de Leaflet-kaart.** `osrmRoute` haalt nu de volledige geometrie op (`overview=full&geometries=polyline`); een meegeleverde polyline-decoder zet die om naar coördinaten. De route wordt in de rust-kleur over de kaart getekend (met crème 'casing' eronder voor contrast) en de kaart zoomt met `fitBounds` op de hele reis. Vertrek- en bestemmingspunt krijgen een eigen marker, met een bijschrift dat de lijn uitlegt.
+- **Greedy-volgorde robuuster.** Een kandidaat zonder geldige coördinaat laat de bezoekvolgorde niet meer vastlopen of in willekeurige invoervolgorde achterblijven; het anker verschuift alleen bij een geldig punt.
+- **Maps-waypointlimiet veiliger.** Cap teruggebracht van 8 naar 7 tussenpunten, zodat de Google Maps-URL onder de praktische limiet (~9 punten totaal) blijft en geen stops stilletjes wegvallen.
+- Versie en service-worker-cache naar v1.9.
+
+## v1.8
+
+- Dagplanning/itinerary vervangen door **Logische route**.
+- Routevoorstel gebruikt favorieten als primaire input.
+- Als er nog geen favorieten zijn, gebruikt Reiskompas de hoogst gerankte bezienswaardigheden plus eten/drinken.
+- Startpunt wordt automatisch gekozen uit parkeerplaats, OV-knooppunt, vertrekpunt of focusgebied.
+- Greedy nearest-neighbour volgorde toegevoegd voor praktische bezoekvolgorde.
+- Indicatieve afstanden tussen stops toegevoegd.
+- Google Maps-link met waypoints toegevoegd.
+- AI-prompt omgebouwd naar routeadvies zonder strak tijdschema.
+- Versie en service-worker cache bijgewerkt naar v1.8.
+
 ## v1.7
 
 - Sectie **Bereikbaarheid & verstoringen** toegevoegd.
