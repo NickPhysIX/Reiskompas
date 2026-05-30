@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0-beta.3
+
+- Plaatsherkenning aangescherpt: exacte plaatsnaam krijgt veel hogere prioriteit.
+- Fuzzy matches zoals `Helft van Delft` worden afgestraft wanneer de gebruiker `Delft` bedoelt.
+- Kleine bekende-plaatsenlaag toegevoegd voor Delft, Willemstad, Punda en Kissimmee.
+- Vertrekpuntveld wordt bij automatische resolutie niet meer overschreven; de gebruikersinvoer blijft zichtbaar.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.3.
+
 ## v2.0-beta.2
 
 Kleine QA/QC-fixrelease.

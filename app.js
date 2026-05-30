@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.2';
+const APP_VERSION = '2.0-beta.3';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -220,7 +220,7 @@ async function resolveTypedInput(key, opts={}){
     return null;
   }
   state[key]=place;
-  inp.value=formatPlaceInput(place, txt);
+  if(key==='dest') inp.value=formatPlaceInput(place, txt);
 
   if(key==='dest'){
     resetAreaField();
@@ -297,24 +297,40 @@ function setupAutocomplete(inputId,listId,key){
   document.addEventListener('click',e=>{ if(!inp.contains(e.target)&&!list.contains(e.target)) list.classList.remove('open'); });
 }
 // fallback resolve via Nominatim if user typed but didn't pick
+const KNOWN_PLACE_ALIASES = {
+  'delft': {lat:52.0116, lon:4.3571, name:'Delft', country:'Nederland', cc:'nl'},
+  'willemstad': {lat:12.1084, lon:-68.9335, name:'Willemstad', country:'Curaçao', cc:'cw'},
+  'punda': {lat:12.1057, lon:-68.9320, name:'Punda', country:'Curaçao', cc:'cw'},
+  'kissimmee': {lat:28.29196, lon:-81.40757, name:'Kissimmee', country:'United States', cc:'us'}
+};
+
 async function resolveCity(q){
   try{
-    const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&accept-language=nl,en&q=${encodeURIComponent(q)}`;
+    const rawFull=String(q||'').trim();
+    const raw=rawFull.split(',')[0].trim().toLowerCase();
+    if(KNOWN_PLACE_ALIASES[raw]) return {...KNOWN_PLACE_ALIASES[raw]};
+
+    const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&addressdetails=1&accept-language=nl,en&q=${encodeURIComponent(q)}`;
     const r=await fetch(url);
     const arr=await r.json();
     if(!Array.isArray(arr) || !arr.length) return null;
 
-    const raw=String(q||'').split(',')[0].trim().toLowerCase();
     const scored=arr.map(p=>{
       const a=p.address||{};
       const nm=(a.city||a.town||a.village||a.municipality||a.hamlet||p.name||(p.display_name||q).split(',')[0]||'').trim();
+      const display=(p.display_name||'').toLowerCase();
       const cls=`${p.class||''}/${p.type||''}`;
+      const cc=(a.country_code||'').toLowerCase();
       let score=0;
-      if(nm.toLowerCase()===raw) score+=50;
-      if(['city','town','village','municipality'].some(k=>a[k])) score+=20;
-      if((a.country_code||'').toLowerCase()==='nl') score+=8;
-      if((a.country_code||'').toLowerCase()==='cw') score+=10;
-      if(/administrative|place/i.test(cls)) score+=5;
+      if(nm.toLowerCase()===raw) score+=100;
+      if((p.name||'').trim().toLowerCase()===raw) score+=80;
+      if(display.split(',')[0].trim()===raw) score+=70;
+      if(['city','town','village','municipality'].some(k=>a[k])) score+=30;
+      if(/administrative|place/i.test(cls)) score+=12;
+      if(cc==='nl') score+=8;
+      if(cc==='cw') score+=10;
+      if(nm.toLowerCase().includes(raw) && nm.toLowerCase()!==raw) score-=35; // "Helft van Delft" is geen Delft
+      if(!['city','town','village','municipality','hamlet'].some(k=>a[k]) && !(p.name||'').trim()) score-=15;
       return {p,nm,score};
     }).sort((a,b)=>b.score-a.score);
 
