@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.0-beta.10
+
+QoL: logischere volgorde van het stadsdossier + losse kaartsectie.
+
+Nieuwe volgorde van de resultaten, dichter bij de natuurlijke leesvolgorde van een uitje:
+
+1. Weer op de gekozen datum/bestemming.
+2. Reisadvies (auto/EV/OV) met parkeer- en laadopties en aankomstpuntkeuze.
+3. Bereikbaarheid & verstoringen (werkzaamheden, spoor) — indien van toepassing.
+4. **Kaart** (nieuwe eigen sectie) met de route/aankomstpunt, plus knoppen **Open in Google Maps** en **Open in Apple Maps**.
+5. Zien & doen, verborgen parels, eten, drinken — op basis van je interesses.
+6. Mijn dossier: gekozen POI's op een eigen dossierkaart + dossier opslaan.
+
+- De routekaart zat eerst ín de reisadvies-sectie; die is losgetrokken naar een eigen sectie (`sec-map`) ná de verstoringen, zodat de volgorde parkeren → waarschuwingen → kaart klopt.
+- Apple Maps-deeplink toegevoegd (`appleDeeplink`) naast de bestaande Google Maps-export; beide respecteren vertrekpunt, gekozen aankomstpunt en vervoersmodus.
+- Sectienummering bijgewerkt naar de nieuwe volgorde (①–⑧).
+- POI-dossierkaart en opslaan blijven onderaan, in die volgorde.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.10.
+
+## v2.0-beta.9
+
+Fix: binnenstadsgarages ontbraken bij de aankomstopties.
+
+- **Oorzaak:** Overpass levert resultaten in volgorde nodes → ways → relations en kapt af op de fetch-limiet. Grote binnenstadsgarages (Marktgarage, Zuidpoort, Phoenix) staan als *ways* in OSM. Binnen een straal van ~3 km zitten 40+ parkeer-*nodes*, dus de limiet van 40 was opgebruikt vóórdat één garage-way werd uitgevoerd. De afstandssortering kreeg die garages nooit te zien, met alleen losse node-parkings en afgelegen opties (station, IKEA) als gevolg.
+- **Fix:** fetch-limiet voor parkeren verhoogd van 40 → 200, zodat álle parkeerfeatures binnen de straal terugkomen (nodes én ways). De bestaande client-side sortering op nabijheid zet daarna de dichtstbijzijnde — inclusief centrale garages — correct bovenaan.
+- Idem voor OV-knooppunten (30 → 120) en laadpunten (40 → 80); stations zijn vaak ways/relations en werden om dezelfde reden afgekapt.
+- Cache-sleutel bevat de limiet, dus oude (te krappe) parkeerresultaten worden automatisch ververst.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.9.
+
 ## v2.0-beta.8
 
 QA/QC-fixes op de selecteerbare-aankomstflow van beta.7.

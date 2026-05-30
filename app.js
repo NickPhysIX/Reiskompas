@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.8';
+const APP_VERSION = '2.0-beta.10';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -856,7 +856,10 @@ async function generate(){
   let arrivalChoice=null;
 
   if(state.startMode!=='local' && (mode==='car'||mode==='ev')){
-    parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,40,'parking')),anchor)
+    // limiet hoog houden: Overpass levert eerst nodes, dan ways/relations. Grote binnenstadsgarages
+    // (Marktgarage, Zuidpoort, Phoenix) zijn ways; bij een lage limiet werden die afgekapt vóór de
+    // afstandssortering. Daarom ruim ophalen en pas client-side op nabijheid sorteren + afkappen.
+    parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,200,'parking')),anchor)
               .sort((a,b)=>a._dist-b._dist);   // dichtstbijzijnde eerst → fixt 'IKEA-parkeren'
     const bestParking = parking[0] || null;
     if(bestParking){
@@ -866,12 +869,12 @@ async function generate(){
       arrivalChoice={kind:'parking',index:0};   // default aankomstpunt is meteen zichtbaar gekozen
     }
     if(dep) route=await osrmRoute(dep,travelTarget);
-    if(mode==='ev') charging=withDistance(dedupe(await overpass(['nwr["amenity"="charging_station"]'],anchor.lat,anchor.lon,R.charge,40,'charging')),anchor)
+    if(mode==='ev') charging=withDistance(dedupe(await overpass(['nwr["amenity"="charging_station"]'],anchor.lat,anchor.lon,R.charge,80,'charging')),anchor)
               .sort((a,b)=>a._dist-b._dist);
   } else if(state.startMode!=='local' && mode==='transit'){
     stops=withDistance(dedupe(await overpass(
       ['nwr["public_transport"="station"]','nwr["railway"="station"]','nwr["railway"="tram_stop"]','nwr["station"="subway"]'],
-      anchor.lat,anchor.lon,R.transit,30,'transit')),anchor).sort((a,b)=>a._dist-b._dist);
+      anchor.lat,anchor.lon,R.transit,120,'transit')),anchor).sort((a,b)=>a._dist-b._dist);
     const bestStop = stops[0] || null;
     if(bestStop){
       travelTarget={lat:bestStop.lat, lon:bestStop.lon};
@@ -980,13 +983,13 @@ function renderAll(d){
   const doHTML = areaCaption + areaSuggest + (d.attractions.length
     ? sourceBadges()+`<div class="grid">${visibleItems(d.attractions,'attractions').map(e=>poiCard(e,catLabel(e))).join('')}</div>${moreButton('attractions',d.attractions.length)}`
     : `<div class="note">Weinig gemapte plekken gevonden binnen deze straal. Probeer een grotere stad, een andere buurt of meer interesses aan te vinken — OpenStreetMap-dekking varieert per regio.</div>`);
-  sec('sec-do','Zien & doen','②',doHTML, d.attractions.length?`${Math.min(displayCounts.attractions,d.attractions.length)} van ${d.attractions.length} plekken`:'');
+  sec('sec-do','Zien & doen','④',doHTML, d.attractions.length?`${Math.min(displayCounts.attractions,d.attractions.length)} van ${d.attractions.length} plekken`:'');
 
   // hidden gems — sluit de al getoonde 9 uit
   const shownIds = new Set(visibleItems(d.attractions,'attractions').map(favId));
   const gems = hiddenGems(d.attractions, shownIds);
   if(gems.length){
-    sec('sec-gems','Niet iedereen kent deze','②b',`<div class="grid">${gems.map(e=>poiCard(e,catLabel(e))).join('')}</div>`,`${gems.length} tips`);
+    sec('sec-gems','Niet iedereen kent deze','④b',`<div class="grid">${gems.map(e=>poiCard(e,catLabel(e))).join('')}</div>`,`${gems.length} tips`);
   } else clearSec('sec-gems');
 
   // eat
@@ -994,7 +997,7 @@ function renderAll(d){
     const eatHTML = d.eats.length
       ? `<div class="grid">${visibleItems(d.eats,'eats').map(e=>poiCard(e,(e.tags.cuisine||'eten').split(';')[0],priceTag(e))).join('')}</div>${moreButton('eats',d.eats.length)}`
       : `<div class="note">Geen eetgelegenheden gevonden bij deze keuze${state.cuisines.size?' / keuken':''}. Probeer een andere keuken of vink er meer aan.</div>`;
-    sec('sec-eat','Eten','③',eatHTML, d.eats.length?`${Math.min(displayCounts.eats,d.eats.length)} van ${d.eats.length}`:'');
+    sec('sec-eat','Eten','⑤',eatHTML, d.eats.length?`${Math.min(displayCounts.eats,d.eats.length)} van ${d.eats.length}`:'');
   } else clearSec('sec-eat');
 
   // drink
@@ -1003,22 +1006,24 @@ function renderAll(d){
     const drHTML = d.drinks.length
       ? note+`<div class="grid">${visibleItems(d.drinks,'drinks').map(e=>poiCard(e,e.tags.amenity)).join('')}</div>${moreButton('drinks',d.drinks.length)}`
       : `<div class="note">Geen drinkgelegenheden gevonden in de buurt.</div>`;
-    sec('sec-drink','Drinken','④',drHTML, d.drinks.length?`${Math.min(displayCounts.drinks,d.drinks.length)} van ${d.drinks.length}`:'');
+    sec('sec-drink','Drinken','⑥',drHTML, d.drinks.length?`${Math.min(displayCounts.drinks,d.drinks.length)} van ${d.drinks.length}`:'');
   } else clearSec('sec-drink');
 
   // travel
   if(d.startMode==='local'){
-    sec('sec-travel','Startpunt','⑤', localStartHTML(d), 'lokaal');
+    sec('sec-travel','Startpunt','②', localStartHTML(d), 'lokaal');
     clearSec('sec-disruptions');
   } else {
-    sec('sec-travel', travelTitle(d.mode),'⑤', travelHTML(d), '');
-    sec('sec-disruptions','Bereikbaarheid & verstoringen','⑤b', disruptionsHTML(d), 'check vooraf');
+    sec('sec-travel', travelTitle(d.mode),'②', travelHTML(d), '');
+    sec('sec-disruptions','Bereikbaarheid & verstoringen','②b', disruptionsHTML(d), 'check vooraf');
   }
+  // kaart (na reisadvies + verstoringen, vóór de POI-lijst)
+  sec('sec-map','Kaart','③', mapSectionHTML(d), '');
 
   // dossier
   window.__dossier={...d};
-  sec('sec-dossier','Mijn dossier','⑥', dossierHTML(d), favorites.length?`${favorites.length} gekozen`:'lokaal');
-  sec('sec-ai','AI-adviesprompt','⑦', aiPromptHTML(d), 'optioneel');
+  sec('sec-dossier','Mijn dossier','⑦', dossierHTML(d), favorites.length?`${favorites.length} gekozen`:'lokaal');
+  sec('sec-ai','AI-adviesprompt','⑧', aiPromptHTML(d), 'optioneel');
 
   // colophon
   $('colophon').innerHTML=`<b>Bronnen:</b> OpenStreetMap (Overpass) · Open-Meteo · OSRM · Nominatim/Photon · Leaflet.
@@ -1146,7 +1151,7 @@ function disruptionsHTML(d){
 
 
 function localStartHTML(d){
-  return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en verken wat er rond <b>${esc(d.anchorName||d.destText)}</b> te doen is.</div><div id="map"></div>`;
+  return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en verken wat er rond <b>${esc(d.anchorName||d.destText)}</b> te doen is.</div>`;
 }
 
 
@@ -1259,10 +1264,7 @@ function travelHTML(d){
     </div>`;
     cards+=`<div class="tcard"><h4>💡 Tip</h4><div class="sub2">${m==='bike'?'Veel steden hebben deelfietsen of OV-fiets bij stations. Check de lokale aanbieder.':'Comfortabele schoenen en een waterflesje. Plan pauzes als je kinderen meeneemt.'}</div></div>`;
   }
-  const mapCap = (d.route && d.route.geometry)
-    ? `<div class="na" style="margin:10px 0 4px">🗺️ Indicatieve route naar ${esc(travelTargetText(d))}. Kies eventueel een ander aankomstpunt in de lijst. Je gekozen locaties staan op de dossierkaart.</div>`
-    : `<div class="na" style="margin:10px 0 4px">🗺️ Kaart met het gekozen focusgebied en praktische aankomstpunten. Je gekozen locaties staan op de dossierkaart.</div>`;
-  return `<div class="travel-grid">${cards}</div>${mapCap}<div id="map"></div>`;
+  return `<div class="travel-grid">${cards}</div>`;
 }
 function transitDeeplink(d){
   const o=(d.startMode==='local') ? '' : (d.dep?`${d.dep.lat},${d.dep.lon}`:'');
@@ -1270,6 +1272,26 @@ function transitDeeplink(d){
   const dd=`${tgt.lat},${tgt.lon}`;
   const tm={car:'driving',ev:'driving',transit:'transit',bike:'bicycling',foot:'walking'}[d.mode];
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${dd}&travelmode=${tm}`;
+}
+function appleDeeplink(d){
+  const tgt=d.travelTarget||d.anchor||d.dest;
+  const daddr=`${tgt.lat},${tgt.lon}`;
+  const dirflg={car:'d',ev:'d',transit:'r',bike:'w',foot:'w'}[d.mode]||'d';
+  const saddr=(d.startMode!=='local' && d.dep)?`&saddr=${d.dep.lat},${d.dep.lon}`:'';
+  return `https://maps.apple.com/?daddr=${daddr}${saddr}&dirflg=${dirflg}`;
+}
+// Eigen kaartsectie: komt ná reisadvies en verstoringen, vóór de POI-lijst.
+function mapSectionHTML(d){
+  const hasRoute = d.route && d.route.geometry;
+  const cap = hasRoute
+    ? `🗺️ Indicatieve route naar ${esc(travelTargetText(d))}. Kies eventueel een ander aankomstpunt hierboven. Je gekozen POI's staan op de dossierkaart onderaan.`
+    : `🗺️ Kaart met het gekozen focusgebied en praktische aankomstpunten. Je gekozen POI's staan op de dossierkaart onderaan.`;
+  const googleSolid = (d.startMode!=='local' && d.dep) ? 'solid' : '';
+  const exportBtns = `<div class="actions" style="margin:4px 0 10px">
+      <a class="btn ${googleSolid}" target="_blank" rel="noopener" href="${transitDeeplink(d)}">Open in Google Maps →</a>
+      <a class="btn" target="_blank" rel="noopener" href="${appleDeeplink(d)}">Open in Apple Maps →</a>
+    </div>`;
+  return `<div class="na" style="margin:2px 0 4px">${cap}</div>${exportBtns}<div id="map"></div>`;
 }
 
 /* ---------- route proposal ---------- */
