@@ -1,22 +1,17 @@
-# Reiskompas v2.0-beta.12
+# Reiskompas v2.0-beta.13
 
 Reiskompas is een persoonlijke stadsverkenner voor één dag of één bezoekmoment.
 
-Geen dag-itinerary. Geen uurplanning. Geen meerdaagse reizen.
+## Nieuw in beta.13
 
-## Nieuw in beta.12
-
-- Foodcourts blijven nu zichtbaar bij eetresultaten, ook als je een specifiek keukenfilter kiest (ze bevatten immers ~alle keukens).
-- De interesse **Mall / winkelcentrum** is aangescherpt: alleen benoemde winkelcentra/retailpanden komen mee, geen anonieme winkelpanden meer.
-
-## Nieuw in beta.11
-
-- Interesse **Mall / winkelcentrum** toegevoegd.
-- Horeca-query uitgebreid met `amenity=food_court`.
-- Keukenfilter **Foodcourt** toegevoegd.
-- Foodcourts en winkelcentra krijgen duidelijkere labels.
-- Foodcourt/winkelcentrum-hint toegevoegd bij de eetresultaten.
-- Horecaquery iets ruimer gemaakt zodat clusters rond malls/stations beter zichtbaar worden.
+- IJssalons worden niet meer als gewone activiteit in **Zien & doen** getoond.
+- `amenity=ice_cream` blijft wel beschikbaar via **Eten**.
+- Kleine known-places overlay voor Utrecht toegevoegd:
+  - Hoog Catharijne
+  - Hoog Catharijne foodcourt / food area
+  - Parkeergarage Croeselaan / Jaarbeurszijde
+- Deze overlay vult open data aan wanneer OSM plekken menselijk herkenbaar maar technisch onhandig modelleert.
+- Known plekken krijgen een korte toelichting in de kaart.
 
 ## Kern
 

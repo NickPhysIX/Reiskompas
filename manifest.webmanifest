@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Persoonlijke stadsverkenner met winkelcentra en foodcourts",
+  "description": "Persoonlijke stadsverkenner met betere classificatie voor ijssalons en bekende Utrecht-plekken",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -28,5 +28,5 @@
       "purpose": "maskable"
     }
   ],
-  "version": "2.0-beta.12"
+  "version": "2.0-beta.13"
 }

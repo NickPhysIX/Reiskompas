@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.0-beta.13
+
+Classificatie en Utrecht-overlay.
+
+- IJssalons (`amenity=ice_cream`) worden uit **Zien & doen** gehouden en horen voortaan bij **Eten**.
+- Kindvriendelijke selectie haalt geen ijssalons meer als hoofdactiviteit op.
+- Known-places overlay toegevoegd voor Utrecht/Binnenstad:
+  - Hoog Catharijne als mall/winkelcentrum.
+  - Hoog Catharijne foodcourt / food area als foodcourt.
+  - Parkeergarage Croeselaan / Jaarbeurszijde als aankomst-/parkeeroptie.
+- Known plekken worden alleen toegevoegd wanneer ze binnen een redelijke afstand van het focusgebied vallen.
+- Bekende plekken krijgen een korte toelichting in de UI.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.13.
+
 ## v2.0-beta.12
 
 Fixes op de horeca/winkel-uitbreiding van beta.11.

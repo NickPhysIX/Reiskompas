@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.12';
+const APP_VERSION = '2.0-beta.13';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -74,6 +74,34 @@ function toggleFavorite(btn){
 function serializePoi(e, tag){ return encodeURIComponent(JSON.stringify({id:favId(e), name:e.tags.name, tag:tag||catLabel(e), lat:e.lat, lon:e.lon, address:addr(e.tags)})); }
 function asNum(n){ return Math.round(Number(n)*1000)/1000; }
 
+function makeKnownPoi(id,name,lat,lon,tags){
+  return {id:'k_'+id, lat, lon, tags:{name, ...tags}, _known:true};
+}
+function isUtrechtContext(city, anchor){
+  const hay=((city?.name||'')+' '+(city?.country||'')+' '+(anchor?.name||'')).toLowerCase();
+  if(/utrecht/.test(hay)) return true;
+  return city && isFinite(city.lat) && isFinite(city.lon) && Math.abs(city.lat-52.09)<0.08 && Math.abs(city.lon-5.12)<0.08;
+}
+function knownPlacesFor(city, anchor, radiusKm){
+  const out={attractions:[], eats:[], parking:[]};
+  if(!isUtrechtContext(city, anchor)) return out;
+  const items=[
+    {bucket:'attractions', poi:makeKnownPoi('utrecht_hoog_catharijne','Hoog Catharijne',52.0909,5.1138,{shop:'mall', building:'retail', tourism:'attraction', source:'known_overlay', note:'Winkelcentrum bij Utrecht Centraal'})},
+    {bucket:'eats', poi:makeKnownPoi('utrecht_hc_foodcourt','Hoog Catharijne foodcourt / food area',52.0907,5.1134,{amenity:'food_court', cuisine:'food_court', source:'known_overlay', note:'Foodcourt/winkelcentrum; losse horeca staat niet altijd afzonderlijk in OSM'})},
+    {bucket:'parking', poi:makeKnownPoi('utrecht_p_croeselaan','Parkeergarage Croeselaan / Jaarbeurszijde',52.0876,5.1076,{amenity:'parking', parking:'multi-storey', fee:'yes', source:'known_overlay', note:'Aan de Jaarbeurszijde van Utrecht Centraal; handig als je via Hoog Catharijne naar de binnenstad loopt'})},
+    {bucket:'parking', poi:makeKnownPoi('utrecht_p_jaarbeursplein','Parkeren Jaarbeursplein / Croeselaan',52.0888,5.1072,{amenity:'parking', parking:'multi-storey', fee:'yes', source:'known_overlay', note:'Aankomstoptie aan de westzijde van Utrecht Centraal'})}
+  ];
+  items.forEach(({bucket,poi})=>{
+    poi._dist = haversine(anchor,{lat:poi.lat,lon:poi.lon});
+    if(poi._dist <= Math.max(0.8, Number(radiusKm||2)+0.75)) out[bucket].push(poi);
+  });
+  return out;
+}
+function mergeKnown(list, known){
+  return dedupe([...(known||[]), ...(list||[])]);
+}
+
+
 function displayCountry(country, cc=''){
   const code=String(cc||'').toLowerCase();
   const raw=String(country||'').trim();
@@ -116,7 +144,7 @@ const INTERESTS = [
   {id:'mall',      label:'Mall / winkelcentrum', em:'🏬', osm:['nwr["shop"="mall"]','nwr["amenity"="food_court"]','nwr["building"~"retail|commercial"]["name"]'], boost:/mall|winkelcentrum|shopping|hoog catharijne|food.?court/i},
   {id:'view',      label:'Uitzicht & foto',  em:'📷', osm:['nwr["tourism"~"viewpoint|artwork"]']},
   {id:'pretpark',  label:'Pretparken',       em:'🎢', osm:['nwr["tourism"="theme_park"]']},
-  {id:'kidsfun',   label:'Kindvriendelijk',  em:'🧒', osm:['nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]','nwr["leisure"="park"]']},
+  {id:'kidsfun',   label:'Kindvriendelijk',  em:'🧒', osm:['nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["leisure"="park"]']},
 ];
 
 const CUISINES = [
@@ -661,11 +689,12 @@ function poiCard(e,tag,extra=''){
   const oh=t.opening_hours?`<div class="oh">🕒 ${esc(t.opening_hours)}</div>`:`<div class="oh na">openingstijden n.b.</div>`;
   const a=addr(t); const ad=a?`<div class="ad">${esc(a)}</div>`:`<div class="ad na">adres n.b.</div>`;
   const di=e._dist!=null?`<div class="oh">📍 ${distLabel(e._dist)}</div>`:'';
+  const note=t.note?`<div class="oh na">${esc(t.note)}</div>`:'';
   return `<div class="poi">
     <button class="fav-btn ${on?'on':''}" data-fav="${escAttr(id)}" data-poi="${serializePoi(e,tag)}" title="${on?'Verwijder uit deze trip':'Neem mee in deze trip'}" type="button">${on?'✓':'+'}</button>
     ${tag?`<div class="tag">${esc(tag)}</div>`:''}
     <div class="nm">${esc(t.name)}</div>
-    ${ad}${oh}${di}${extra}
+    ${ad}${oh}${di}${note}${extra}
     <a class="lk" href="${gmaps(e.lat,e.lon)}" target="_blank" rel="noopener">Open in kaart →</a>
   </div>`;
 }
@@ -810,6 +839,7 @@ async function generate(){
   const radiusM = Math.round(radiusKm * 1000);
   const R = { poi:radiusM, food:radiusM, park:Math.min(radiusM,3000), charge:Math.min(Math.max(radiusM,1500),5000), transit:Math.min(radiusM,3000) };
   const anchorName = state.area ? state.area.name : destText;
+  const known = knownPlacesFor(city, anchor, radiusKm);
 
   // weer (altijd op stadsniveau)
   setStatus('Weer ophalen…');
@@ -821,9 +851,11 @@ async function generate(){
   const chosen=INTERESTS.filter(it=>state.interests.has(it.id));
   (chosen.length?chosen:INTERESTS.filter(it=>['musea','arch','view'].includes(it.id)))
     .forEach(it=>clauses.push(...it.osm));
-  if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]');
+  if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]');
   clauses=[...new Set(clauses)];
   let attractions=withDistance(dedupe(await overpass(clauses,anchor.lat,anchor.lon,R.poi,100,'poi')),anchor);
+  attractions = withDistance(mergeKnown(attractions, known.attractions), anchor)
+    .filter(e=>e.tags?.amenity!=='ice_cream');
   attractions = rankPlaces(attractions, chosen, kids, state.companions);  // score primair, afstand als tiebreak
 
   // eten / drinken
@@ -840,6 +872,7 @@ async function generate(){
       else if(am==='food_court'){ eats.push(f); }
       else eats.push(f);
     });
+    if(state.eat) eats = withDistance(mergeKnown(eats, known.eats), anchor);
     if(cuiRes.length){
       eats=eats.filter(f=>{
         // Foodcourts bevatten ~alle keukens en hebben zelden een cuisine-tag;
@@ -867,7 +900,8 @@ async function generate(){
     // limiet hoog houden: Overpass levert eerst nodes, dan ways/relations. Grote binnenstadsgarages
     // (Marktgarage, Zuidpoort, Phoenix) zijn ways; bij een lage limiet werden die afgekapt vóór de
     // afstandssortering. Daarom ruim ophalen en pas client-side op nabijheid sorteren + afkappen.
-    parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,200,'parking')),anchor)
+    parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,200,'parking')),anchor);
+    parking=withDistance(mergeKnown(parking, known.parking),anchor)
               .sort((a,b)=>a._dist-b._dist);   // dichtstbijzijnde eerst → fixt 'IKEA-parkeren'
     const bestParking = parking[0] || null;
     if(bestParking){
