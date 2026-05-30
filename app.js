@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.4';
+const APP_VERSION = '2.0-beta.5';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -66,6 +66,10 @@ function toggleFavorite(btn){
     b.classList.toggle('on',on); b.textContent=on?'✓':'+';
     b.title=on?'Verwijder uit deze trip':'Neem mee in deze trip';
   });
+  // tweede kaart live bijwerken zonder de hele pagina te herrenderen
+  try{ if($('poi-map')||$('poi-map-empty')) initPoiMap(); }catch(e){ console.warn('initPoiMap failed', e); }
+  const dossierSec=$('sec-dossier'); const cnt=dossierSec?dossierSec.querySelector('.count'):null;
+  if(cnt) cnt.textContent=favorites.length?`${favorites.length} gekozen`:'lokaal';
 }
 function serializePoi(e, tag){ return encodeURIComponent(JSON.stringify({id:favId(e), name:e.tags.name, tag:tag||catLabel(e), lat:e.lat, lon:e.lon, address:addr(e.tags)})); }
 function asNum(n){ return Math.round(Number(n)*1000)/1000; }
@@ -1006,6 +1010,7 @@ function renderAll(d){
 
   // map
   setTimeout(()=>initMap(d),120);
+  setTimeout(()=>initPoiMap(),150);
   stagger();
 }
 
@@ -1383,12 +1388,26 @@ function currentDossierTitle(d){
 }
 function dossierHTML(d){
   const selected = favorites.slice(0,30);
+  const favCount = selected.length;
   const selList = selected.length
     ? `<div class="chips" style="margin-top:8px">${selected.map(f=>`<span class="chip on" style="cursor:default">✓ ${esc(f.name)}</span>`).join(' ')}</div>`
     : `<div class="na" style="margin-top:8px">Nog niets gekozen. Tik op <b>+</b> bij plekken die je wilt onthouden.</div>`;
+  const poiMapBlock = `
+    <div class="poi-map-block">
+      <div class="na" id="poi-map-cap" style="margin:14px 0 4px"><b>🗺️ Jouw gekozen plekken op een eigen kaart</b></div>
+      <div id="poi-map-empty" class="na" style="margin:2px 0 6px;display:${favCount?'none':'block'}">Tik op <b>+</b> bij interessante plekken — je selectie verschijnt hier los van de auto-route.</div>
+      <div class="poi-legend" id="poi-legend" style="display:${favCount?'flex':'none'}">
+        <span><i style="background:#1d6a5c"></i>bezienswaardigheid</span>
+        <span><i style="background:#bd4a26"></i>eten</span>
+        <span><i style="background:#c98a2b"></i>drinken</span>
+        <span><i style="background:#888"></i>parkeren</span>
+      </div>
+      <div id="poi-map" style="display:${favCount?'block':'none'}"></div>
+    </div>`;
   return `<div class="dossier-panel">
     <div class="note"><b>Reiskompas v2:</b> geen dagplanning. Bewaar alleen de plekken die interessant zijn voor deze stad/buurt.</div>
     ${selList}
+    ${poiMapBlock}
     <label class="lbl" for="dossier-title" style="margin-top:12px">Dossiernaam</label>
     <input id="dossier-title" value="${escAttr(currentDossierTitle(d))}" />
     <label class="lbl" for="dossier-notes" style="margin-top:12px">Notitie</label>
@@ -1599,6 +1618,54 @@ function initMap(d){
     try{ _map.fitBounds(routeLayer.getBounds().pad(0.12)); }catch(e){}
   }
   setTimeout(()=>_map.invalidateSize(),200);
+}
+
+/* ---------- POI-kaart (alleen de met + gekozen plekken) ---------- */
+let _poiMap=null;
+function poiMarkerColor(tag){
+  const t=String(tag||'').toLowerCase();
+  if(/drink|koffie|caf|bar|pub|mocktail/.test(t)) return '#c98a2b';   // amber — drinken
+  if(/eten|eet|restaur|food|cuisine|lunch|diner/.test(t)) return '#bd4a26'; // rust — eten
+  if(/park/.test(t)) return '#888';                                    // grijs — parkeren
+  return '#1d6a5c';                                                    // teal — bezienswaardigheid/overig
+}
+function initPoiMap(){
+  const el=$('poi-map'); if(!el || typeof L==='undefined') return;
+  const empty=$('poi-map-empty'), legend=$('poi-legend');
+  const pts=(favorites||[]).filter(f=>isFinite(+f.lat)&&isFinite(+f.lon)).map(f=>({...f,lat:+f.lat,lon:+f.lon}));
+
+  if(_poiMap){ try{_poiMap.remove();}catch(e){} _poiMap=null; }
+
+  if(!pts.length){
+    el.style.display='none';
+    if(empty) empty.style.display='block';
+    if(legend) legend.style.display='none';
+    return;
+  }
+  el.style.display='block';
+  if(empty) empty.style.display='none';
+  if(legend) legend.style.display='flex';
+
+  _poiMap=L.map('poi-map',{scrollWheelZoom:false}).setView([pts[0].lat,pts[0].lon],14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_poiMap);
+  const cream='#f3e9da';
+  const coords=[];
+  pts.forEach(f=>{
+    const color=poiMarkerColor(f.tag);
+    const popup=`<b>${esc(f.name||'Plek')}</b>`
+      + (f.tag?`<br><small>${esc(f.tag)}</small>`:'')
+      + (f.address?`<br><small>${esc(f.address)}</small>`:'')
+      + `<br><a href="${gmaps(f.lat,f.lon,f.name)}" target="_blank" rel="noopener">Open in Maps →</a>`;
+    L.circleMarker([f.lat,f.lon],{radius:7,color:cream,weight:2,fillColor:color,fillOpacity:1}).addTo(_poiMap).bindPopup(popup);
+    coords.push([f.lat,f.lon]);
+  });
+
+  setTimeout(()=>{
+    if(!_poiMap) return;
+    _poiMap.invalidateSize();
+    if(coords.length>1){ try{ _poiMap.fitBounds(L.latLngBounds(coords).pad(0.2)); }catch(e){} }
+    else { _poiMap.setView(coords[0],15); }
+  },160);
 }
 
 

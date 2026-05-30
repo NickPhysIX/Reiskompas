@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Reiskompas v2.0-beta.4 — klaar voor je citytrip</title>
+<title>Reiskompas v2.0-beta.5 — klaar voor je citytrip</title>
 <meta name="description" content="Reiskompas is een privacyvriendelijke stadsverkenner voor één dag: kies een focusgebied, zoekradius en bewaar interessante plekken als lokaal dossier." />
 
 <!-- PWA -->
@@ -249,7 +249,11 @@ input[type=time]::-webkit-calendar-picker-indicator{
 .dot{width:10px;height:10px;border-radius:50%;}
 .dot.low{background:var(--teal);}.dot.mid{background:var(--gold);}.dot.high{background:var(--rust);}
 
-#map{height:300px;border-radius:12px;border:1.5px solid var(--line-strong);margin-top:3px;}
+#map,#poi-map{height:300px;border-radius:12px;border:1.5px solid var(--line-strong);margin-top:3px;}
+#poi-map{height:260px;}
+.poi-legend{display:flex;flex-wrap:wrap;gap:10px 16px;font-size:12px;color:var(--ink-soft);margin:8px 0 2px;line-height:1.4;}
+.poi-legend span{display:inline-flex;align-items:center;gap:6px;}
+.poi-legend i{width:11px;height:11px;border-radius:50%;display:inline-block;border:1.5px solid #f3e9da;}
 
 /* itinerary */
 .timeline{border-left:2px solid var(--line-strong);margin-left:8px;padding-left:18px;
@@ -405,7 +409,7 @@ details.plan-details .actions{padding:0 16px 14px;}
   <div class="brandrow">
     <div class="seal"><img src="icon-192.png" alt="Reiskompas" /></div>
     <div>
-      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v2.0-beta.4</span></div>
+      <div class="wordmark">Reis<span>kompas</span><span class="version-badge">v2.0-beta.5</span></div>
     </div>
   </div>
   <div class="tagline">Bereid je citytrip voor &nbsp;·&nbsp; <b>openbare bronnen</b> &nbsp;·&nbsp; geen API-keys &nbsp;·&nbsp; werkt wereldwijd</div>
@@ -576,7 +580,7 @@ details.plan-details .actions{padding:0 16px 14px;}
 
 
 <footer class="creator-footer">
-  Reiskompas v2.0-beta.4 · door <b>Niels Braakman</b> ·
+  Reiskompas v2.0-beta.5 · door <b>Niels Braakman</b> ·
   <button type="button" onclick="openAboutModal()">Over deze app</button>
 </footer>
 
