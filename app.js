@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.13';
+const APP_VERSION = '2.0-beta.14';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -772,7 +772,20 @@ function interestScore(e, chosen){
   if(t.tourism==='museum') s+=2;
   if(t.tourism==='attraction') s+=1;
   if(t.wikidata || t.wikipedia) s+=3;
+  // Fix #1: tourism=attraction is een OSM-vergaarbak. Een "kale" attraction —
+  // geen naam, geen wiki-koppeling en geen ondersteunend subtype (museum, kunst,
+  // historisch, etc.) — is vrijwel altijd ruis. Sterk laag ranken zodat echte
+  // bezienswaardigheden bovenaan blijven, zonder ze hard weg te filteren.
+  if(t.tourism==='attraction' && !isSubstantialAttraction(t)) s-=10;
   return s;
+}
+// Heuristiek: heeft deze attraction genoeg "body" om een echte bestemming te zijn?
+function isSubstantialAttraction(t){
+  if(t.name && (t.wikidata || t.wikipedia)) return true;      // benoemd + gedocumenteerd
+  if(t.tourism && t.tourism!=='attraction') return true;       // heeft een concreter subtype
+  if(t.historic || t.tourism==='museum' || t.tourism==='gallery' || t.tourism==='zoo' || t.tourism==='theme_park') return true;
+  if(t.name && (t.heritage || t.building==='cathedral' || t.amenity==='place_of_worship')) return true;
+  return false;
 }
 function companionScore(e, companions){
   if(!companions || !companions.size) return 0;
@@ -851,9 +864,12 @@ async function generate(){
   const chosen=INTERESTS.filter(it=>state.interests.has(it.id));
   (chosen.length?chosen:INTERESTS.filter(it=>['musea','arch','view'].includes(it.id)))
     .forEach(it=>clauses.push(...it.osm));
-  if(kids !== 'none') clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]');
+  // Met kinderen erbij: alleen speeltuinen meenemen als de gebruiker geen
+  // eigen interesses koos (anders kaapten playgrounds/zoo de lijst — fix #4).
+  // Bij wél gekozen interesses laten we kindvriendelijkheid via childScore meewegen.
+  if(kids !== 'none' && !chosen.length) clauses.push('nwr["leisure"="playground"]','nwr["tourism"="zoo"]');
   clauses=[...new Set(clauses)];
-  let attractions=withDistance(dedupe(await overpass(clauses,anchor.lat,anchor.lon,R.poi,100,'poi')),anchor);
+  let attractions=withDistance(dedupe(await overpass(clauses,anchor.lat,anchor.lon,R.poi,180,'poi')),anchor);
   attractions = withDistance(mergeKnown(attractions, known.attractions), anchor)
     .filter(e=>e.tags?.amenity!=='ice_cream');
   attractions = rankPlaces(attractions, chosen, kids, state.companions);  // score primair, afstand als tiebreak
@@ -1084,16 +1100,39 @@ function sec(id,title,ix,html,count){
   $(id).innerHTML=`<div class="sec-head"><span class="ix">${ix}</span><h3>${title}</h3>${count?`<span class="count">${count}</span>`:''}</div>${html}`;
 }
 function clearSec(id){ $(id).innerHTML=''; }
+const LABELS_NL = {
+  // amenity
+  restaurant:'restaurant', fast_food:'snackbar', cafe:'café', bar:'bar', pub:'café',
+  biergarten:'biergarten', ice_cream:'ijssalon', food_court:'foodcourt',
+  place_of_worship:'kerk/gebedshuis', theatre:'theater', cinema:'bioscoop',
+  arts_centre:'cultureel centrum', marketplace:'markt', library:'bibliotheek',
+  townhall:'stadhuis', fountain:'fontein', nightclub:'club',
+  // tourism
+  museum:'museum', gallery:'galerie', artwork:'kunstwerk', viewpoint:'uitzichtpunt',
+  attraction:'bezienswaardigheid', zoo:'dierentuin', theme_park:'pretpark',
+  aquarium:'aquarium', gallery_:'galerie', hotel:'hotel',
+  // leisure
+  park:'park', garden:'tuin', playground:'speeltuin', amusement_arcade:'speelhal',
+  nature_reserve:'natuurgebied', sports_centre:'sportcentrum',
+  // historic
+  castle:'kasteel', monument:'monument', memorial:'gedenkteken', tower:'toren',
+  city_gate:'stadspoort', fort:'fort', ruins:'ruïne', church:'kerk',
+  // shop
+  books:'boekhandel', anime:'comic/manga-winkel', toys:'speelgoedwinkel',
+  video_games:'gamewinkel', games:'gamewinkel', mall:'winkelcentrum',
+  department_store:'warenhuis', gift:'cadeauwinkel',
+};
+function nlLabel(key){ return LABELS_NL[key] || (key||'').replace(/_/g,' '); }
 function catLabel(e){
-  const t=e.tags;
+  const t=e.tags||{};
   if(t.amenity==='food_court') return 'foodcourt';
   if(t.shop==='mall') return 'winkelcentrum';
   if(t.building==='retail' || t.building==='commercial') return 'winkelgebied';
-  if(t.tourism)return t.tourism.replace('_',' ');
-  if(t.shop)return t.shop.replace('_',' ');
-  if(t.historic)return t.historic.replace('_',' ');
-  if(t.leisure)return t.leisure.replace('_',' ');
-  if(t.amenity)return t.amenity.replace('_',' ');
+  if(t.tourism) return nlLabel(t.tourism);
+  if(t.historic) return nlLabel(t.historic);
+  if(t.shop)    return nlLabel(t.shop);
+  if(t.leisure) return nlLabel(t.leisure);
+  if(t.amenity) return nlLabel(t.amenity);
   return 'plek';
 }
 function priceTag(e){

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0-beta.14
+
+Generaliseerbare classificatie-fixes (audit naar aanleiding van het ijssalon-/Hoog Catharijne-onderzoek). Deze gelden wereldwijd, niet per stad.
+
+- **#1 — `tourism=attraction`-ruis aangepakt.** Die OSM-tag is een vergaarbak die aan van alles hangt. Een "kale" attraction (geen naam, geen wiki-koppeling, geen ondersteunend subtype zoals museum/historisch/kunst) wordt nu sterk laag gerankt in plaats van als volwaardige bezienswaardigheid getoond. Echte, benoemde of gedocumenteerde attracties blijven gewoon bovenaan; er wordt niets hard weggefilterd.
+- **#3 — Nette Nederlandse labels.** POI-labels toonden rauwe OSM-tags ("fast food", "place of worship", "bureau de change"). Er is nu een NL-labelmap (snackbar, kerk/gebedshuis, ijssalon, uitzichtpunt, kasteel, ...) met nette fallback voor onbekende tags. Een kasteel met zowel `historic=castle` als `tourism=attraction` toont nu "kasteel" i.p.v. "bezienswaardigheid".
+- **#4 — Speeltuinen kapen de lijst niet meer.** Met kinderen erbij werden `playground` + `zoo` altijd als extra query toegevoegd, ook bij een specifieke interesse als Musea. Speeltuinen/dierentuinen worden nu alleen los opgehaald als je géén eigen interesses koos; anders weegt kindvriendelijkheid via de scoring mee.
+- **#6 — Grote attracties niet meer afgekapt.** De fetch-limiet voor attracties ging van 100 → 180, zodat als ways/relations gemapte grote attracties (stadspark, dierentuin, kasteelterrein) niet wegvallen vóór de afstandssortering — zelfde klasse fout als eerder bij parkeren.
+
+Niet in deze versie (bewust uitgesteld): #2 (hard filteren op boost-match bij shop-interesses) en #5 (herziening van de "verborgen parels"-definitie) — beide deels productkeuzes.
+
 ## v2.0-beta.13
 
 Classificatie en Utrecht-overlay.

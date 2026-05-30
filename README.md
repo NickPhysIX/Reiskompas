@@ -1,6 +1,13 @@
-# Reiskompas v2.0-beta.13
+# Reiskompas v2.0-beta.14
 
 Reiskompas is een persoonlijke stadsverkenner voor één dag of één bezoekmoment.
+
+## Nieuw in beta.14
+
+- Minder ruis bij bezienswaardigheden: vage, naamloze `tourism=attraction`-punten worden laag gerankt zodat echte bezienswaardigheden bovenaan staan.
+- Nette Nederlandse labels bij POI's (snackbar, kerk/gebedshuis, ijssalon, kasteel, ...) in plaats van rauwe OSM-tags.
+- Met kinderen erbij kapen speeltuinen je lijst niet meer als je een specifieke interesse koos.
+- Grote attracties (parken, dierentuinen, kasteelterreinen) worden niet meer afgekapt bij het ophalen.
 
 ## Nieuw in beta.13
 
