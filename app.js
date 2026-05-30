@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.3';
+const APP_VERSION = '2.0-beta.4';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -271,26 +271,21 @@ function setupAutocomplete(inputId,listId,key){
       }catch(e){ list.classList.remove('open'); if(key==='dest') setFieldHint('area-hint','Autocomplete kon niet laden. Druk Enter of klik Genereer; Reiskompas probeert de stad alsnog te herkennen.'); }
     },260);
   });
-  async function resolveCustomArea(){
-    const q=inp.value.trim();
-    if(q.length<2 || !state.dest) return null;
-    const area = await resolveAreaText(q, state.dest);
-    if(area){
-      state.area=area;
-      inp.value=area.name;
-      const areaSel=$('area');
-      if(areaSel) areaSel.value='';
-      setFieldHint('area-hint',`Focus op ${area.name}.`);
-    }else{
-      setFieldHint('area-hint','Gebied niet herkend; probeer bijvoorbeeld Centrum, Binnenstad of een wijknaam.');
-    }
-    return area;
+  // Fallback wanneer de gebruiker wel typte maar niets uit de lijst koos.
+  // BELANGRIJK: dest/dep zijn STEDEN, geen gebied binnen de bestemming.
+  // Daarom resolven we hier via resolveTypedInput (resolveCity) en NIET via
+  // resolveAreaText — dat laatste biaste naar state.dest en maakte van
+  // "Delft" bij bestemming Utrecht het object "Helft van Delft".
+  function resolveTypedCity(){
+    if(state[key]) return;                 // al gekozen uit de suggestielijst
+    if(inp.value.trim().length<3) return;  // te kort om zinvol te resolven
+    resolveTypedInput(key).catch(()=>{});  // overschrijft het dep-veld niet
   }
-  inp.addEventListener('blur',()=>{ setTimeout(()=>resolveCustomArea().catch(()=>{}), 120); });
+  inp.addEventListener('blur',()=>{ setTimeout(resolveTypedCity, 120); });
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
       e.preventDefault();
-      resolveCustomArea().catch(()=>{});
+      resolveTypedCity();
       list.classList.remove('open');
     }
   });

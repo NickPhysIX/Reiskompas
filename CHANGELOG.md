@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0-beta.4
+
+Echte fix voor de "vertrek van"-bug (de beta.3-fix zat in de verkeerde functie).
+
+- **Oorzaak gevonden:** `dest` en `dep` deelden `setupAutocomplete()`, en daarin hing een `resolveCustomArea()` aan blur/Enter. Die behandelde de getypte vertrektekst als een *gebied binnen de bestemming* (`resolveAreaText(q, state.dest)`), met Photon-bias naar de bestemmingscoördinaten. Bij bestemming Utrecht maakte dat van `Delft` het object `Helft van Delft`, dat zowel het vertrekveld overschreef als de gebiedsselectie vervuilde.
+- De beta.3-aanscherping zat in `resolveCity` (scoring), maar het blur-pad liep nooit via `resolveCity` — vandaar dat het probleem bleef.
+- **Fix:** in `setupAutocomplete` resolvet de fallback (blur/Enter) nu via `resolveTypedInput`/`resolveCity` als *stad*, niet als gebied. Het vertrekveld wordt daarbij niet overschreven en `state.area` wordt niet meer per ongeluk gezet.
+- De legitieme `resolveCustomArea` blijft ongewijzigd in `setupAreaCustom` (alleen voor het focusgebied-veld).
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.4.
+
 ## v2.0-beta.3
 
 - Plaatsherkenning aangescherpt: exacte plaatsnaam krijgt veel hogere prioriteit.
