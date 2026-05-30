@@ -1,7 +1,7 @@
 {
   "name": "Reiskompas",
   "short_name": "Reiskompas",
-  "description": "Persoonlijke stadsverkenner met selecteerbare aankomstopties",
+  "description": "Persoonlijke stadsverkenner met winkelcentra en foodcourts",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -28,5 +28,5 @@
       "purpose": "maskable"
     }
   ],
-  "version": "2.0-beta.10"
+  "version": "2.0-beta.12"
 }

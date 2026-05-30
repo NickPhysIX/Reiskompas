@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.10';
+const APP_VERSION = '2.0-beta.12';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -113,6 +113,7 @@ const INTERESTS = [
   {id:'gaming',    label:'Gaming',           em:'🎮', osm:['nwr["shop"~"video_games|games"]','nwr["leisure"="amusement_arcade"]']},
   {id:'scifi',     label:'Boekhandels',      em:'🚀', osm:['nwr["shop"="books"]'], boost:/sci|fantasy|fiction|boek/i},
   {id:'winkelen',  label:'Winkelen',         em:'🛍️', osm:['nwr["shop"~"mall|department_store"]']},
+  {id:'mall',      label:'Mall / winkelcentrum', em:'🏬', osm:['nwr["shop"="mall"]','nwr["amenity"="food_court"]','nwr["building"~"retail|commercial"]["name"]'], boost:/mall|winkelcentrum|shopping|hoog catharijne|food.?court/i},
   {id:'view',      label:'Uitzicht & foto',  em:'📷', osm:['nwr["tourism"~"viewpoint|artwork"]']},
   {id:'pretpark',  label:'Pretparken',       em:'🎢', osm:['nwr["tourism"="theme_park"]']},
   {id:'kidsfun',   label:'Kindvriendelijk',  em:'🧒', osm:['nwr["leisure"="playground"]','nwr["tourism"="zoo"]','nwr["amenity"="ice_cream"]','nwr["leisure"="park"]']},
@@ -130,6 +131,7 @@ const CUISINES = [
   {label:'Indiaas',     re:/indian/},
   {label:'Vega(n)',     re:/vegetarian|vegan/},
   {label:'Streetfood',  re:/street_food|fast_food/},
+  {label:'Foodcourt',   re:/food_court|foodcourt|mall|shopping/},
   {label:'Vis',         re:/seafood|fish/},
 ];
 
@@ -829,17 +831,23 @@ async function generate(){
   if(state.eat||state.drink){
     setStatus('Eet- en drinkgelegenheden zoeken…');
     const food=withDistance(dedupe(await overpass(
-      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream"]'],anchor.lat,anchor.lon,R.food,120,'food')),anchor);
+      ['nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|biergarten|ice_cream|food_court"]'],anchor.lat,anchor.lon,R.food,180,'food')),anchor);
     const cuiRes=CUISINES.filter(c=>state.cuisines.has(c.label));
     food.forEach(f=>{
       const am=f.tags.amenity;
       if(['bar','pub','biergarten'].includes(am)) drinks.push(f);
       else if(am==='cafe'){ drinks.push(f); if(state.eat) eats.push(f); }
+      else if(am==='food_court'){ eats.push(f); }
       else eats.push(f);
     });
     if(cuiRes.length){
-      eats=eats.filter(f=>{ const c=(f.tags.cuisine||'').toLowerCase();
-        return cuiRes.some(cu=>cu.re.test(c)); });
+      eats=eats.filter(f=>{
+        // Foodcourts bevatten ~alle keukens en hebben zelden een cuisine-tag;
+        // ze moeten dus niet door een specifiek keukenfilter sneuvelen.
+        if(f.tags.amenity==='food_court') return true;
+        const c=((f.tags.cuisine||'')+' '+(f.tags.amenity||'')+' '+(f.tags.name||'')+' '+(f.tags.shop||'')).toLowerCase();
+        return cuiRes.some(cu=>cu.re.test(c));
+      });
     }
     // eten: kindvriendelijkheid als lichte voorkeur, daarna nabijheid
     eats.sort((a,b)=> (childScore(b,kids)-childScore(a,kids)) || (a._dist-b._dist));
@@ -994,8 +1002,10 @@ function renderAll(d){
 
   // eat
   if(state.eat){
+    const hasFoodCourt = d.eats.some(e=>e.tags?.amenity==='food_court' || /food.?court|mall|winkelcentrum/i.test(e.tags?.name||''));
+    const eatNote = hasFoodCourt ? `<div class="note" style="margin-bottom:11px">Foodcourts en winkelcentra kunnen veel losse eetplekken bevatten die niet allemaal apart in OSM staan.</div>` : '';
     const eatHTML = d.eats.length
-      ? `<div class="grid">${visibleItems(d.eats,'eats').map(e=>poiCard(e,(e.tags.cuisine||'eten').split(';')[0],priceTag(e))).join('')}</div>${moreButton('eats',d.eats.length)}`
+      ? eatNote+`<div class="grid">${visibleItems(d.eats,'eats').map(e=>poiCard(e,(e.tags.amenity==='food_court'?'foodcourt':(e.tags.cuisine||'eten').split(';')[0]),priceTag(e))).join('')}</div>${moreButton('eats',d.eats.length)}`
       : `<div class="note">Geen eetgelegenheden gevonden bij deze keuze${state.cuisines.size?' / keuken':''}. Probeer een andere keuken of vink er meer aan.</div>`;
     sec('sec-eat','Eten','⑤',eatHTML, d.eats.length?`${Math.min(displayCounts.eats,d.eats.length)} van ${d.eats.length}`:'');
   } else clearSec('sec-eat');
@@ -1042,6 +1052,9 @@ function sec(id,title,ix,html,count){
 function clearSec(id){ $(id).innerHTML=''; }
 function catLabel(e){
   const t=e.tags;
+  if(t.amenity==='food_court') return 'foodcourt';
+  if(t.shop==='mall') return 'winkelcentrum';
+  if(t.building==='retail' || t.building==='commercial') return 'winkelgebied';
   if(t.tourism)return t.tourism.replace('_',' ');
   if(t.shop)return t.shop.replace('_',' ');
   if(t.historic)return t.historic.replace('_',' ');

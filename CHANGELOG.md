@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.0-beta.12
+
+Fixes op de horeca/winkel-uitbreiding van beta.11.
+
+- **Foodcourt sneuvelde bij keukenfilter — opgelost.** Een foodcourt bevat ~alle keukens maar heeft zelden een `cuisine`-tag, waardoor hij wegviel zodra je een specifiek keukenfilter (bv. Italiaans) koos — juist wanneer hij het nuttigst is. Foodcourts (`amenity=food_court`) passeren het keukenfilter nu altijd.
+- **Mall-query aangescherpt tegen ruis.** De interesse Mall/winkelcentrum matchte via `building~retail|commercial` élk pand met die tag, inclusief anonieme winkelpanden. De query eist nu een `name`-tag op die buildings, zodat alleen echte, benoemde winkelcentra/retailpanden meekomen (`shop=mall` en `food_court` blijven ongewijzigd).
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.12.
+
+## v2.0-beta.11
+
+Uitbreiding voor winkelcentra en foodcourts.
+
+- Interesse **Mall / winkelcentrum** toegevoegd aan `Wat wil je zien of doen?`.
+- Horeca-query uitgebreid met `amenity=food_court`.
+- Keuken-/eetfilter **Foodcourt** toegevoegd.
+- Foodcourts, malls en winkelgebieden krijgen duidelijkere labels.
+- Foodcourt/winkelcentrum-hint toegevoegd bij eetresultaten wanneer relevant.
+- Horeca-querylimiet verhoogd zodat stations-/mallclusters beter worden meegenomen.
+- Versie, manifestmetadata en service-worker cache bijgewerkt naar v2.0-beta.11.
+
 ## v2.0-beta.10
 
 QoL: logischere volgorde van het stadsdossier + losse kaartsectie.
