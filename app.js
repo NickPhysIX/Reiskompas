@@ -12,7 +12,7 @@ function setFieldHint(id, msg){
   if(el && msg) el.textContent=msg;
 }
 
-const APP_VERSION = '2.0-beta.5';
+const APP_VERSION = '2.0-beta.8';
 const CACHE_PREFIX = 'reiskompas-cache-v'+APP_VERSION+':';  // afgeleid → kan niet uit sync raken
 const INSTALL_KEY = 'reiskompas-install-dismissed'; // idem — gebruikersvoorkeur, geen cache
 const TTL = { weather: 6*60*60*1000, poi: 7*24*60*60*1000, food: 3*24*60*60*1000, route: 6*60*60*1000 };
@@ -852,21 +852,38 @@ async function generate(){
   // vervoer
   setStatus('Reisinformatie samenstellen…');
   let route=null, parking=[], charging=[], stops=[];
+  let travelTarget=anchor, travelTargetLabel=anchorName, travelTargetKind='focusgebied';
+  let arrivalChoice=null;
+
   if(state.startMode!=='local' && (mode==='car'||mode==='ev')){
-    if(dep) route=await osrmRoute(dep,anchor);
     parking=withDistance(dedupe(await overpass(['nwr["amenity"="parking"]'],anchor.lat,anchor.lon,R.park,40,'parking')),anchor)
               .sort((a,b)=>a._dist-b._dist);   // dichtstbijzijnde eerst → fixt 'IKEA-parkeren'
+    const bestParking = parking[0] || null;
+    if(bestParking){
+      travelTarget={lat:bestParking.lat, lon:bestParking.lon};
+      travelTargetLabel=bestParking.tags?.name || 'aanbevolen parkeerlocatie';
+      travelTargetKind='parkeerlocatie';
+      arrivalChoice={kind:'parking',index:0};   // default aankomstpunt is meteen zichtbaar gekozen
+    }
+    if(dep) route=await osrmRoute(dep,travelTarget);
     if(mode==='ev') charging=withDistance(dedupe(await overpass(['nwr["amenity"="charging_station"]'],anchor.lat,anchor.lon,R.charge,40,'charging')),anchor)
               .sort((a,b)=>a._dist-b._dist);
   } else if(state.startMode!=='local' && mode==='transit'){
     stops=withDistance(dedupe(await overpass(
       ['nwr["public_transport"="station"]','nwr["railway"="station"]','nwr["railway"="tram_stop"]','nwr["station"="subway"]'],
       anchor.lat,anchor.lon,R.transit,30,'transit')),anchor).sort((a,b)=>a._dist-b._dist);
+    const bestStop = stops[0] || null;
+    if(bestStop){
+      travelTarget={lat:bestStop.lat, lon:bestStop.lon};
+      travelTargetLabel=bestStop.tags?.name || 'aanbevolen OV-knooppunt';
+      travelTargetKind='OV-knooppunt';
+      arrivalChoice={kind:'transit',index:0};   // default aankomstpunt is meteen zichtbaar gekozen
+    }
   }
 
   routeUseSuggestions=false;
   resetDisplayCounts();
-  renderAll({dest:city,anchor,anchorName,tight,radiusKm,dep,destText:cleanDestText,depText:cleanDepText,date,time,mode,startMode:state.startMode,kids,weather,attractions,eats,drinks,route,parking,charging,stops});
+  renderAll({dest:city,anchor,anchorName,tight,radiusKm,dep,destText:cleanDestText,depText:cleanDepText,date,time,mode,startMode:state.startMode,kids,weather,attractions,eats,drinks,route,parking,charging,stops,travelTarget,travelTargetLabel,travelTargetKind,arrivalChoice});
 
   $('loading').classList.remove('on');
   $('content').classList.add('on');
@@ -1043,7 +1060,7 @@ function roadRefs(d){
 }
 function googleTrafficLink(d){
   const o=(d.startMode==='local') ? '' : (d.dep?`${d.dep.lat},${d.dep.lon}`:'');
-  const tgt=d.anchor||d.dest;
+  const tgt=d.travelTarget||d.anchor||d.dest;
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${tgt.lat},${tgt.lon}&travelmode=driving`;
 }
 function nsLink(d){
@@ -1132,7 +1149,53 @@ function localStartHTML(d){
   return `<div class="note"><b>Je bent al in de buurt.</b> Reiskompas toont daarom geen reisadvies vanaf een vertrekplaats. Kies interessante plekken met <b>+</b> en verken wat er rond <b>${esc(d.anchorName||d.destText)}</b> te doen is.</div><div id="map"></div>`;
 }
 
+
+function travelTargetText(d){
+  if(d.startMode==='local') return d.anchorName||d.destText;
+  if(d.travelTargetKind==='parkeerlocatie') return `${d.travelTargetLabel} nabij ${d.anchorName||d.destText}`;
+  if(d.travelTargetKind==='OV-knooppunt') return `${d.travelTargetLabel} nabij ${d.anchorName||d.destText}`;
+  return d.anchorName||d.destText;
+}
+
 function travelTitle(m){return {car:'Reisadvies — auto',ev:'Reisadvies — EV',transit:'Reisadvies — OV',bike:'Reisadvies — fiets',foot:'Reisadvies — te voet'}[m];}
+
+
+function isCurrentArrival(d, kind, idx){
+  return d.arrivalChoice && d.arrivalChoice.kind===kind && d.arrivalChoice.index===idx;
+}
+function arrivalButton(d, kind, idx){
+  const on=isCurrentArrival(d,kind,idx);
+  return `<button class="btn ${on?'solid':''}" type="button" onclick="chooseArrival('${kind}',${idx},this)">${on?'✓ Aankomstpunt':'Gebruik als aankomstpunt'}</button>`;
+}
+let _arrivalSeq = 0;
+async function chooseArrival(kind, idx, btn){
+  const d=window.__dossier;
+  if(!d) return;
+  const arr = kind==='parking' ? (d.parking||[]) : (d.stops||[]);
+  const item = arr[idx];
+  if(!item) return;
+
+  d.arrivalChoice={kind,index:idx};
+  d.travelTarget={lat:item.lat,lon:item.lon};
+  d.travelTargetLabel=item.tags?.name || (kind==='parking'?'gekozen parkeerlocatie':'gekozen OV-knooppunt');
+  d.travelTargetKind=kind==='parking'?'parkeerlocatie':'OV-knooppunt';
+  d.routeStale=false;
+
+  if(d.dep && (d.mode==='car'||d.mode==='ev')){
+    const seq = ++_arrivalSeq;                 // fix 3: volgnummer tegen out-of-order responses
+    if(btn){ btn.disabled=true; btn.textContent='Route bijwerken…'; }  // fix 2: zichtbare pending-state
+    const newRoute = await osrmRoute(d.dep,d.travelTarget);
+    if(seq !== _arrivalSeq) return;            // nieuwere keuze gemaakt → deze respons negeren
+    if(newRoute){                              // fix 1: alleen overschrijven als herberekening lukte
+      d.route=newRoute;
+      d.routeStale=false;
+    } else {
+      d.routeStale=true;                       // oude route behouden + waarschuwing tonen
+    }
+  }
+  window.__dossier=d;
+  renderAll(d);
+}
 
 function travelHTML(d){
   const m=d.mode;
@@ -1142,20 +1205,23 @@ function travelHTML(d){
     const roads=(d.route?.roads||[]).map(r=>`<span class="road ${/^N/.test(r)?'N':''}">${esc(r)}</span>`).join('');
     cards+=`<div class="tcard">
       <h4>🚗 Rit ${d.depText?`vanaf ${esc(d.depText)}`:''}</h4>
-      ${d.route?`<div class="big">${d.route.min} min</div><div class="sub2">± ${d.route.km} km · indicatief, zonder live verkeer</div>
+      ${d.route?`<div class="big">${d.route.min} min</div><div class="sub2">± ${d.route.km} km · naar ${esc(travelTargetText(d))} · indicatief, zonder live verkeer</div>
         ${roads?`<div class="sub2" style="margin-top:9px">Vermoedelijke route:</div><div class="roadlist">${roads}</div>`:''}`
         : `<div class="na">Geen route — vul een vertrekstad in (en kies 'm uit de lijst).</div>`}
+      ${d.routeStale?`<div class="na" style="margin-top:9px;color:#8a3b1c">⚠️ Kon de route naar dit aankomstpunt niet herberekenen (routeserver tijdelijk onbereikbaar). De getoonde route hoort nog bij het vorige punt — probeer het zo nog eens.</div>`:''}
       <div class="busy" style="margin-top:11px"><span class="dot ${b.lvl}"></span>${b.txt}</div>
     </div>`;
-    cards+=`<div class="tcard"><h4>🅿️ Parkeren — dichtstbij</h4>${
-      d.parking.length? d.parking.slice(0,4).map(p=>{
+    cards+=`<div class="tcard"><h4>🅿️ Aankomstopties — parkeren</h4>${
+      d.parking.length? d.parking.slice(0,8).map((p,i)=>{
         const fee=p.tags.fee==='yes'?'betaald':p.tags.fee==='no'?'gratis':'tarief n.b.';
         const cap=p.tags.capacity?` · ${p.tags.capacity} plaatsen`:'';
-        const dl=p._dist!=null?` · 📍 ${distLabel(p._dist)}`:'';
-        return `<div style="margin-bottom:7px"><b>${esc(p.tags.name||'Parkeergelegenheid')}</b>
-          <div class="sub2">${fee}${cap}${dl} · <a class="lk" href="${gmaps(p.lat,p.lon)}" target="_blank" rel="noopener">kaart →</a></div></div>`;
+        const dl=p._dist!=null?` · 📍 ${distLabel(p._dist)} van focus`:'';
+        const name=p.tags.name||'Parkeergelegenheid';
+        return `<div style="margin-bottom:10px"><b>${esc(name)}</b>
+          <div class="sub2">${fee}${cap}${dl} · <a class="lk" href="${gmaps(p.lat,p.lon,name)}" target="_blank" rel="noopener">kaart →</a></div>
+          <div class="actions" style="margin-top:6px">${arrivalButton(d,'parking',i)}</div></div>`;
       }).join('') : `<div class="na">Geen parkeerdata gevonden.</div>`}
-      <div class="na" style="margin-top:6px">Exacte tarieven staan niet in OSM.</div>
+      <div class="na" style="margin-top:6px">Kies zelf je aankomstpunt. Tarieven en beschikbaarheid staan meestal niet volledig in OSM.</div>
     </div>`;
     if(m==='ev'){
       cards+=`<div class="tcard"><h4>⚡ Laadpunten</h4>${
@@ -1166,12 +1232,18 @@ function travelHTML(d){
       </div>`;
     }
   } else if(m==='transit'){
-    cards+=`<div class="tcard"><h4>🚋 OV-knooppunten bij bestemming</h4>${
-      d.stops.length? d.stops.slice(0,5).map(s=>`<div style="margin-bottom:5px"><b>${esc(s.tags.name)}</b>
-        <div class="sub2">${(s.tags.railway||s.tags.station||s.tags.public_transport||'halte').replace('_',' ')}${s._dist!=null?` · 📍 ${distLabel(s._dist)}`:''}</div></div>`).join('')
+    cards+=`<div class="tcard"><h4>🚋 Aankomstopties — OV</h4>${
+      d.stops.length? d.stops.slice(0,8).map((s,i)=>{
+        const name=s.tags.name||'OV-knooppunt';
+        const typ=(s.tags.railway||s.tags.station||s.tags.public_transport||'halte').replace('_',' ');
+        const dl=s._dist!=null?` · 📍 ${distLabel(s._dist)} van focus`:'';
+        return `<div style="margin-bottom:10px"><b>${esc(name)}</b>
+          <div class="sub2">${esc(typ)}${dl} · <a class="lk" href="${gmaps(s.lat,s.lon,name)}" target="_blank" rel="noopener">kaart →</a></div>
+          <div class="actions" style="margin-top:6px">${arrivalButton(d,'transit',i)}</div></div>`;
+      }).join('')
         :`<div class="na">Geen OV-knooppunten gevonden in de buurt.</div>`}</div>`;
     cards+=`<div class="tcard"><h4>🕐 Tijden & route</h4>
-      <div class="sub2">Live OV-tijden, perrons en overstappen zitten niet in gratis open bronnen. Plan de exacte reis via de officiële planner:</div>
+      <div class="sub2">Live OV-tijden, perrons en overstappen zitten niet in gratis open bronnen. Plan de exacte reis naar ${esc(travelTargetText(d))} via de officiële planner:</div>
       <div class="actions" style="margin-top:11px">
         <a class="btn solid" target="_blank" rel="noopener" href="${transitDeeplink(d)}">Reis plannen (Google) →</a>
         ${d.dest.cc==='nl'?`<a class="btn" target="_blank" rel="noopener" href="https://9292.nl">9292 →</a>`:''}
@@ -1188,13 +1260,13 @@ function travelHTML(d){
     cards+=`<div class="tcard"><h4>💡 Tip</h4><div class="sub2">${m==='bike'?'Veel steden hebben deelfietsen of OV-fiets bij stations. Check de lokale aanbieder.':'Comfortabele schoenen en een waterflesje. Plan pauzes als je kinderen meeneemt.'}</div></div>`;
   }
   const mapCap = (d.route && d.route.geometry)
-    ? `<div class="na" style="margin:10px 0 4px">🗺️ De rode lijn toont de rijroute van ${esc(d.depText||'je vertrekpunt')} naar ${esc(d.anchorName||d.destText)} (via OSRM). Stippen zijn bezienswaardigheden, eten en parkeren.</div>`
-    : `<div class="na" style="margin:10px 0 4px">🗺️ Stippen tonen bezienswaardigheden, eten en parkeren rond ${esc(d.anchorName||d.destText)}.</div>`;
+    ? `<div class="na" style="margin:10px 0 4px">🗺️ Indicatieve route naar ${esc(travelTargetText(d))}. Kies eventueel een ander aankomstpunt in de lijst. Je gekozen locaties staan op de dossierkaart.</div>`
+    : `<div class="na" style="margin:10px 0 4px">🗺️ Kaart met het gekozen focusgebied en praktische aankomstpunten. Je gekozen locaties staan op de dossierkaart.</div>`;
   return `<div class="travel-grid">${cards}</div>${mapCap}<div id="map"></div>`;
 }
 function transitDeeplink(d){
   const o=(d.startMode==='local') ? '' : (d.dep?`${d.dep.lat},${d.dep.lon}`:'');
-  const tgt=d.anchor||d.dest;
+  const tgt=d.travelTarget||d.anchor||d.dest;
   const dd=`${tgt.lat},${tgt.lon}`;
   const tm={car:'driving',ev:'driving',transit:'transit',bike:'bicycling',foot:'walking'}[d.mode];
   return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${dd}&travelmode=${tm}`;
@@ -1592,11 +1664,11 @@ let _map=null;
 function initMap(d){
   const el=$('map'); if(!el||typeof L==='undefined') return;
   if(_map){_map.remove();_map=null;}
-  _map=L.map('map',{scrollWheelZoom:false}).setView([d.anchor.lat,d.anchor.lon], d.tight?14:13);
+  const target=d.travelTarget||d.anchor||d.dest;
+  _map=L.map('map',{scrollWheelZoom:false}).setView([target.lat,target.lon], d.tight?14:13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
   const rust='#bd4a26', teal='#1d6a5c', cream='#f3e9da';
 
-  // route-lijn (auto/EV) — rust over de kaart, met een crème 'casing' eronder voor contrast
   const geo = d.route && d.route.geometry;
   let routeLayer=null;
   if(geo && geo.length>1){
@@ -1604,18 +1676,26 @@ function initMap(d){
     routeLayer=L.polyline(geo,{color:rust,weight:4,opacity:1,lineJoin:'round'}).addTo(_map);
   }
 
-  // bestemming/anker
-  L.circleMarker([d.anchor.lat,d.anchor.lon],{radius:9,color:cream,weight:2,fillColor:rust,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b>').openPopup();
-  // vertrekpunt (als bekend en route getekend)
+  // focusgebied
+  L.circleMarker([d.anchor.lat,d.anchor.lon],{radius:8,color:cream,weight:2,fillColor:rust,fillOpacity:.85}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b><br><small>Focusgebied</small>');
+
+  // praktisch aankomstpunt: parkeerlocatie, OV-knooppunt of focuspunt
+  if(target && (target.lat!==d.anchor.lat || target.lon!==d.anchor.lon || d.travelTargetKind!=='focusgebied')){
+    const label=travelTargetText(d);
+    const fill=d.travelTargetKind==='OV-knooppunt'?teal:'#444';
+    L.circleMarker([target.lat,target.lon],{radius:9,color:cream,weight:2,fillColor:fill,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(label)+'</b><br><small>Aankomstpunt</small>').openPopup();
+  } else {
+    L.circleMarker([target.lat,target.lon],{radius:9,color:cream,weight:2,fillColor:rust,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.anchorName||d.destText)+'</b>').openPopup();
+  }
+
+  // vertrekpunt
   if(d.dep && geo) L.circleMarker([d.dep.lat,d.dep.lon],{radius:8,color:cream,weight:2,fillColor:teal,fillOpacity:1}).addTo(_map).bindPopup('<b>'+esc(d.depText||'Vertrek')+'</b>');
 
-  d.attractions.slice(0,12).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:5,color:teal,fillColor:teal,fillOpacity:.7,weight:1}).addTo(_map).bindPopup(esc(e.tags.name)));
-  d.eats.slice(0,8).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:rust,fillColor:rust,fillOpacity:.7,weight:1}).addTo(_map).bindPopup('🍽️ '+esc(e.tags.name)));
-  (d.parking||[]).slice(0,6).forEach(e=>L.circleMarker([e.lat,e.lon],{radius:4,color:'#444',fillColor:'#888',fillOpacity:.6,weight:1}).addTo(_map).bindPopup('🅿️ '+esc(e.tags.name||'Parkeren')));
-
-  // toon de hele reis als er een route is, anders blijf op de bestemming
+  // De POI's staan bewust op de dossierkaart. De hoofdkaart is voor aankomst/bereikbaarheid.
   if(routeLayer){
     try{ _map.fitBounds(routeLayer.getBounds().pad(0.12)); }catch(e){}
+  } else if(target){
+    try{ _map.setView([target.lat,target.lon], d.tight?14:13); }catch(e){}
   }
   setTimeout(()=>_map.invalidateSize(),200);
 }
